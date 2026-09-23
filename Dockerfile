@@ -22,4 +22,16 @@ COPY app/ ./app/
 COPY static/ ./static/
 ENV DOSSIER_STATIQUE=/app/static
 
-CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]
+# Alembic a besoin de sa configuration ET de ses scripts : sans ces deux
+# lignes, la commande `alembic` existe dans le conteneur mais ne trouve aucun
+# fichier de configuration, et la base n'est jamais migree.
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
+
+# Utile pour la demonstration : injecter des mesures sans materiel.
+COPY simulator/ ./simulator/
+
+# Le point d'entree migre la base avant de lancer le serveur.
+COPY docker-entrypoint.sh ./
+RUN chmod +x ./docker-entrypoint.sh
+CMD ["./docker-entrypoint.sh"]
