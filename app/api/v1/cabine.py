@@ -15,13 +15,13 @@ app/services/visage.py). Aucune image ne transite jamais par ces routes.
 
 from sqlalchemy.orm import Session as DbSession
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.v1.calcul import mesures_de_la_seance
 from app.deps import get_db
 from app.models.tables import Astronaute, Mesure
 from app.models.tables import Session as SessionModel
-from app.schemas.crew import EnrolementCorps, IdentificationCorps
+from app.schemas.crew import EnrolementCorps, IdentificationCorps, RemplacementEmpreinteCorps
 from app.services import consentement, visage
 
 router = APIRouter()
@@ -185,6 +185,32 @@ def enroler(corps: EnrolementCorps, db: DbSession = Depends(get_db)):
     """
     astronaute = Astronaute(nom=corps.displayName, empreinte_faciale=corps.empreinte)
     db.add(astronaute)
+    db.commit()
+    db.refresh(astronaute)
+    return _crew_member(astronaute)
+
+
+@router.put("/crew/{crew_id}/empreinte")
+def remplacer_empreinte(
+    crew_id: str, corps: RemplacementEmpreinteCorps, db: DbSession = Depends(get_db)
+):
+    """Remplace l'empreinte faciale d'un astronaute deja enrole.
+
+    Sans cette route, la seule issue pour quelqu'un enrole sous un mauvais
+    eclairage et qui n'est plus reconnu etait de creer un doublon (voir
+    POST /crew/enroll). Meme validation (128 flottants) et meme schema de
+    reponse que l'enrolement : c'est la meme donnee, seule la cible change.
+    """
+    try:
+        astronaute_id = int(crew_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="astronaute introuvable")
+
+    astronaute = db.get(Astronaute, astronaute_id)
+    if astronaute is None:
+        raise HTTPException(status_code=404, detail="astronaute introuvable")
+
+    astronaute.empreinte_faciale = corps.empreinte
     db.commit()
     db.refresh(astronaute)
     return _crew_member(astronaute)

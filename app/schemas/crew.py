@@ -24,3 +24,12 @@ class IdentificationCorps(BaseModel):
 class EnrolementCorps(BaseModel):
     displayName: str
     empreinte: Empreinte
+
+
+class RemplacementEmpreinteCorps(BaseModel):
+    """Corps de PUT /crew/{id}/empreinte : remplace l'empreinte d'un
+    astronaute deja enrole (mauvais eclairage au premier enrolement, par
+    exemple), sans creer de doublon. Meme validation que l'enrolement.
+    """
+
+    empreinte: Empreinte

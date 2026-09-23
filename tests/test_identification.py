@@ -112,3 +112,46 @@ def test_liste_equipage_inclut_les_astronautes_sans_empreinte(client, db_session
     assert reponse.status_code == 200
     noms = {membre["displayName"] for membre in reponse.json()}
     assert noms == {"Jamais enrole", "Mei Tanaka"}
+
+
+def test_remplacer_lempreinte_reussit_et_renvoie_le_meme_schema_que_lenrolement(client):
+    """Un astronaute mal reconnu (mauvais eclairage au premier enrolement)
+    doit pouvoir etre corrige sans creer de doublon.
+    """
+    cree = enroler(client, "Mei Tanaka", vecteur())
+
+    reponse = client.put(
+        f"/api/v1/crew/{cree['id']}/empreinte", json={"empreinte": vecteur(decalage=50.0)}
+    )
+    assert reponse.status_code == 200
+    corps = reponse.json()
+    assert set(corps.keys()) == set(cree.keys())
+    assert corps["id"] == cree["id"]
+    assert corps["displayName"] == "Mei Tanaka"
+
+    # La nouvelle empreinte est bien celle qui identifie desormais la personne...
+    reconnu = identifier(client, vecteur(decalage=50.0))
+    assert reconnu is not None
+    assert reconnu["id"] == cree["id"]
+
+    # ... et l'ancienne ne le fait plus : ce n'est pas un ajout, un vrai
+    # remplacement.
+    assert identifier(client, vecteur()) is None
+
+
+def test_remplacer_lempreinte_dun_astronaute_inconnu_est_refuse(client):
+    reponse = client.put("/api/v1/crew/999/empreinte", json={"empreinte": vecteur()})
+    assert reponse.status_code == 404
+
+
+def test_remplacer_lempreinte_dun_identifiant_non_numerique_est_refuse(client):
+    reponse = client.put("/api/v1/crew/pas-un-id/empreinte", json={"empreinte": vecteur()})
+    assert reponse.status_code == 404
+
+
+def test_remplacer_lempreinte_valide_la_longueur_comme_a_lenrolement(client):
+    cree = enroler(client, "Mei Tanaka", vecteur())
+    reponse = client.put(
+        f"/api/v1/crew/{cree['id']}/empreinte", json={"empreinte": [0.1] * 50}
+    )
+    assert reponse.status_code == 422
