@@ -10,7 +10,8 @@ import statistics
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DbSession
 
 from app.deps import get_db
@@ -117,3 +118,49 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
     await hub.diffuser(session_id, {"type": "recommendation", "payload": recommandation})
 
     return evaluation
+
+
+class IndiceFacial(BaseModel):
+    at: str
+    tension: float = Field(ge=0, le=1)
+    blinkRate: float = Field(ge=0)
+    stillness: float = Field(ge=0, le=1)
+
+
+@router.post("/sessions/{session_id}/face", status_code=202)
+async def recevoir_indice_facial(session_id: int, corps: IndiceFacial):
+    """Un flottant par seconde. Aucune image ne transite, jamais.
+
+    L'analyse a lieu dans le navigateur du Pi : la promesse du dossier est
+    donc vraie architecturalement, et pas seulement sur parole.
+    """
+    await hub.diffuser(session_id, {
+        "type": "frame",
+        "payload": {"at": corps.at, "heartRate": None, "skinConductance": None,
+                    "faceTension": corps.tension, "voiceIndex": None, "suspect": []},
+    })
+    return {"recu": True}
+
+
+@router.post("/sessions/{session_id}/audio")
+async def recevoir_audio(session_id: int, fichier: UploadFile = File(...)):
+    """L'audio est analyse en memoire et detruit dans la meme requete.
+
+    Pas de fichier temporaire, pas de chemin sur disque : la seule chose qui
+    survit a cet appel est un nombre entre 0 et 1.
+    """
+    from app.services.voix import (BASELINE_VOCALE_GENERIQUE,
+                                   features_depuis_wav, indice_vocal)
+
+    octets = await fichier.read()
+    features = features_depuis_wav(octets)
+    del octets
+
+    indice = indice_vocal(features, BASELINE_VOCALE_GENERIQUE)
+
+    await hub.diffuser(session_id, {
+        "type": "frame",
+        "payload": {"at": None, "heartRate": None, "skinConductance": None,
+                    "faceTension": None, "voiceIndex": indice, "suspect": []},
+    })
+    return {"voiceIndex": round(indice, 3), **{k: round(v, 3) for k, v in features.items()}}
