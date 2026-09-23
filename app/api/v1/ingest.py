@@ -1,13 +1,30 @@
+import hashlib
+import hmac
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session as DbSession
 
 from app.deps import get_db
-from app.models.tables import Astronaute, Mesure, Session as SessionModel
+from app.models.tables import Appareil, Astronaute, Mesure, Session as SessionModel
 from app.schemas.ingest import IngestMessage
 
 router = APIRouter()
+
+
+def verifier_signature(message: IngestMessage, cle: str) -> bool:
+    """HMAC-SHA256 sur device_id | seq | ts.
+
+    Le numero de sequence est dans la signature : sans lui, un message capture
+    pourrait etre rejoue indefiniment avec la meme signature valide.
+    """
+    if not message.sig:
+        return False
+    ts = message.ts.isoformat()
+    attendu = hmac.new(
+        cle.encode(), f"{message.device_id}|{message.seq}|{ts}".encode(), hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(attendu, message.sig)
 
 
 def get_or_create_session(db: DbSession) -> SessionModel:
@@ -38,6 +55,17 @@ def get_or_create_session(db: DbSession) -> SessionModel:
 
 @router.post("/ingest", status_code=status.HTTP_202_ACCEPTED)
 def ingest(message: IngestMessage, db: DbSession = Depends(get_db)):
+    appareil = db.query(Appareil).filter(Appareil.device_id == message.device_id).first()
+    if appareil and not verifier_signature(message, appareil.cle_signature):
+        # Journalise et rejette. Un capteur qui parle mal n'est pas une urgence
+        # medicale, c'est un capteur qui deconne - ou quelqu'un d'autre.
+        print(f"signature refusee: {message.device_id} seq={message.seq}", flush=True)
+        raise HTTPException(status_code=401, detail="signature invalide")
+    # Un appareil inconnu de la table `appareils` reste accepte sans verification :
+    # c'est une porte ouverte assumee pour la demonstration (elle laisse tourner
+    # simulator/send_measures.py sans cle), pas un oubli. A durcir en refusant
+    # aussi les appareils non declares, si le temps le permet.
+
     session = get_or_create_session(db)
 
     if message.ppg_raw:

@@ -13,6 +13,9 @@ class Astronaute(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nom: Mapped[str] = mapped_column(String(100))
+    role: Mapped[str] = mapped_column(String(80), default="")
+    initiales: Mapped[str] = mapped_column(String(4), default="")
+    sol_embarquement: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Appareil(Base):

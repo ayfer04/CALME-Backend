@@ -18,6 +18,7 @@ class IngestMessage(BaseModel):
     ppg_raw: list[int] = Field(default_factory=list)
     ma: float | None = None
     qualite: Qualite
+    sig: str | None = None
 
     @field_validator("ibi_ms")
     @classmethod
