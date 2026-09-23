@@ -16,6 +16,13 @@ class Astronaute(Base):
     role: Mapped[str] = mapped_column(String(80), default="")
     initiales: Mapped[str] = mapped_column(String(4), default="")
     sol_embarquement: Mapped[int] = mapped_column(Integer, default=0)
+    # ATTENTION - donnee biometrique : 128 flottants L2-normalises produits par
+    # face-api.js dans le navigateur (jamais recalcules ici, jamais associes a
+    # une image, qui elle ne quitte jamais le client). C'est la seule colonne
+    # de tout le systeme dont on puisse re-deriver une identite ; le reste du
+    # projet ne stocke que des nombres entre 0 et 1. Nullable : tous les
+    # astronautes crees avant cette fonctionnalite n'ont jamais ete enroles.
+    empreinte_faciale: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
 
 
 class Appareil(Base):

@@ -1,10 +1,16 @@
-"""Cabine et equipage : occupant, derniere seance, consentement, capteurs.
+"""Cabine et equipage : occupant, derniere seance, consentement, capteurs,
+identification faciale et enrolement.
 
 Une seule cabine et un seul astronaute de test suffisent aujourd'hui (voir
 tache-19-brief.md). Les routes ci-dessous l'assument explicitement plutot que
 de le cacher derriere une fausse generalite : `cabin_id` est accepte pour
 suivre le contrat du front, mais n'est pas utilise pour choisir entre
 plusieurs cabines puisqu'il n'en existe qu'une.
+
+L'identification et l'enrolement manipulent une empreinte faciale : une
+donnee biometrique, la seule de tout le systeme dont on puisse re-deriver une
+identite (voir app/models/tables.py::Astronaute.empreinte_faciale et
+app/services/visage.py). Aucune image ne transite jamais par ces routes.
 """
 
 from sqlalchemy.orm import Session as DbSession
@@ -15,7 +21,8 @@ from app.api.v1.calcul import mesures_de_la_seance
 from app.deps import get_db
 from app.models.tables import Astronaute, Mesure
 from app.models.tables import Session as SessionModel
-from app.services import consentement
+from app.schemas.crew import EnrolementCorps, IdentificationCorps
+from app.services import consentement, visage
 
 router = APIRouter()
 
@@ -157,3 +164,45 @@ def capteurs(cabin_id: str, db: DbSession = Depends(get_db)):
         })
 
     return resultat
+
+
+@router.get("/crew")
+def liste_equipage(db: DbSession = Depends(get_db)):
+    """Tout l'equipage, pour la liste de repli quand l'identification faciale
+    ne reconnait personne (voir POST /cabins/{id}/identify).
+    """
+    astronautes = db.query(Astronaute).order_by(Astronaute.id).all()
+    return [_crew_member(a) for a in astronautes]
+
+
+@router.post("/crew/enroll")
+def enroler(corps: EnrolementCorps, db: DbSession = Depends(get_db)):
+    """Cree un nouvel astronaute avec son empreinte faciale.
+
+    Un enrolement cree toujours une personne, il ne remplace jamais
+    silencieusement l'empreinte d'un astronaute existant : cette route ne
+    connait que displayName + empreinte, jamais un id a mettre a jour.
+    """
+    astronaute = Astronaute(nom=corps.displayName, empreinte_faciale=corps.empreinte)
+    db.add(astronaute)
+    db.commit()
+    db.refresh(astronaute)
+    return _crew_member(astronaute)
+
+
+@router.post("/cabins/{cabin_id}/identify")
+def identifier(cabin_id: str, corps: IdentificationCorps, db: DbSession = Depends(get_db)):
+    """Compare l'empreinte recue a celles de l'equipage deja enrole.
+
+    Ne considere que les astronautes qui ont deja une empreinte enregistree :
+    ceux qui n'ont jamais ete enroles (empreinte_faciale nulle) sont
+    simplement absents des candidats, jamais une cause de plantage.
+    """
+    candidats = [
+        (a.id, a.empreinte_faciale)
+        for a in db.query(Astronaute).filter(Astronaute.empreinte_faciale.isnot(None)).all()
+    ]
+    identifiant = visage.plus_proche_sous_seuil(corps.empreinte, candidats)
+    if identifiant is None:
+        return None
+    return _crew_member(db.get(Astronaute, identifiant))
