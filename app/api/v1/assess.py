@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DbSession
 
 from app.deps import get_db
+from app.models.tables import Decision, Indicateur, Session as SessionModel
 from app.services.indice import POIDS, ecart_z, indice_charge, niveau_depuis
 from app.ws.hub import hub
 
@@ -22,6 +23,16 @@ router = APIRouter()
 
 SEANCES_POUR_BASELINE = 10
 FACTEUR_BASELINE_GENERIQUE = 0.6
+
+# Baseline de repli, le temps qu'un historique par astronaute soit interroge
+# (pas encore fait : baseline_ou_generique() est toujours appelee avec un
+# historique vide). Module-level pour que sessions.py (clôture) la reutilise
+# sans la redupliquer.
+BASELINE_GENERIQUE = {
+    "hrv_rmssd": (42.0, 15.0), "eda_reponses": (3.0, 2.0),
+    "eda_fond": (5.0, 2.0), "fc_moyenne": (72.0, 9.0),
+    "voix": (0.5, 0.15), "visage": (0.5, 0.15),
+}
 
 # Les cles du front, pour missingSignals. Le contrat parle de quatre signaux.
 SIGNAL_DU_CHAMP = {
@@ -51,20 +62,17 @@ def baseline_ou_generique(historique: list[dict], generique: dict) -> tuple[dict
     return base, 1.0
 
 
-def construire_assessment(session_id: int, mesures: dict, baseline: dict,
-                          facteur_confiance: float, indicateurs_bruts: dict) -> dict:
-    zs = {}
+def signaux_manquants(mesures: dict) -> list[dict]:
+    """Les signaux que le calcul n'a pas pu exploiter, dedupliques.
+
+    Pure fonction des mesures brutes : elle ne depend ni d'une baseline ni
+    d'un historique, donc elle peut etre rejouee a l'identique plus tard
+    (GET /sessions/{id}/assessment la rappelle sans recalculer l'indice).
+    """
     manquants = []
     for cle in POIDS:
-        valeur = mesures.get(cle)
-        if valeur is None:
+        if mesures.get(cle) is None:
             manquants.append({"signal": SIGNAL_DU_CHAMP[cle], "reason": "faulty"})
-            continue
-        moyenne, ecart_type = baseline[cle]
-        zs[cle] = ecart_z(valeur, moyenne, ecart_type)
-
-    indice, confiance = indice_charge(zs)
-    confiance *= facteur_confiance
 
     # Un signal couvre deux champs (hr, eda) : on ne le liste qu'une fois.
     uniques, vus = [], set()
@@ -72,6 +80,21 @@ def construire_assessment(session_id: int, mesures: dict, baseline: dict,
         if m["signal"] not in vus:
             vus.add(m["signal"])
             uniques.append(m)
+    return uniques
+
+
+def construire_assessment(session_id: int, mesures: dict, baseline: dict,
+                          facteur_confiance: float, indicateurs_bruts: dict) -> dict:
+    zs = {}
+    for cle in POIDS:
+        valeur = mesures.get(cle)
+        if valeur is None:
+            continue
+        moyenne, ecart_type = baseline[cle]
+        zs[cle] = ecart_z(valeur, moyenne, ecart_type)
+
+    indice, confiance = indice_charge(zs)
+    confiance *= facteur_confiance
 
     return {
         "id": str(uuid4()),
@@ -79,7 +102,7 @@ def construire_assessment(session_id: int, mesures: dict, baseline: dict,
         "index": round(indice, 1),
         "level": niveau_depuis(indice, confiance),
         "confidence": round(confiance, 3),
-        "missingSignals": uniques,
+        "missingSignals": signaux_manquants(mesures),
         "indicators": indicateurs_bruts,
         "personalBaseline": round(baseline["hrv_rmssd"][0], 1) if "hrv_rmssd" in baseline else None,
         "computedAt": datetime.now(timezone.utc).isoformat(),
@@ -93,22 +116,16 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
     from app.api.v1.calcul import mesures_de_la_seance, indicateurs_du_front
 
     mesures = mesures_de_la_seance(db, session_id)
-    generique = {
-        "hrv_rmssd": (42.0, 15.0), "eda_reponses": (3.0, 2.0),
-        "eda_fond": (5.0, 2.0), "fc_moyenne": (72.0, 9.0),
-        "voix": (0.5, 0.15), "visage": (0.5, 0.15),
-    }
-    baseline, facteur = baseline_ou_generique([], generique)
+    baseline, facteur = baseline_ou_generique([], BASELINE_GENERIQUE)
 
-    evaluation = construire_assessment(
-        session_id, mesures, baseline, facteur, indicateurs_du_front(mesures)
-    )
+    indicateurs_bruts = indicateurs_du_front(mesures)
+    evaluation = construire_assessment(session_id, mesures, baseline, facteur, indicateurs_bruts)
     await hub.diffuser(session_id, {"type": "assessment", "payload": evaluation})
 
     autorises = exercices_autorises(evaluation["level"])
     exercice, message, source, modele = rediger(evaluation, autorises, historique=[])
     recommandation = {
-        "id": str(uuid4()),
+        "id": f"reco-{evaluation['id']}",
         "assessmentId": evaluation["id"],
         "exercise": exercice,
         "message": message,
@@ -116,6 +133,40 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
         "modelName": modele,
     }
     await hub.diffuser(session_id, {"type": "recommendation", "payload": recommandation})
+
+    # Persistance : sans elle, GET /sessions/{id}/assessment,
+    # POST /assessments/{id}/recommend et POST /recommendations/{id}/feedback
+    # n'ont aucun moyen de retrouver ce que ce calcul vient de produire — les
+    # deux uuid4() ci-dessus seraient jetes des la fin de la requete.
+    db.add(Decision(
+        session_id=session_id,
+        ts=datetime.now(timezone.utc),
+        indice_charge=evaluation["index"],
+        niveau=evaluation["level"],
+        exercice_declenche=exercice is not None,
+        consigne_ia=message,
+        source=source,
+        confiance=evaluation["confidence"],
+        assessment_id=evaluation["id"],
+        exercice_id=exercice["id"] if exercice else None,
+    ))
+
+    # Cliche "avant" des indicateurs bruts, pour que POST /sessions/{id}/close
+    # puisse le relire tel quel plutot que de le deviner a partir de mesures
+    # qui auront continue d'arriver pendant l'exercice.
+    session = db.get(SessionModel, session_id)
+    if session is not None:
+        db.add(Indicateur(
+            session_id=session_id,
+            astronaute_id=session.astronaute_id,
+            ts=datetime.now(timezone.utc),
+            fc_moyenne=mesures.get("fc_moyenne"),
+            hrv_rmssd=mesures.get("hrv_rmssd"),
+            eda_fond=mesures.get("eda_fond"),
+            eda_reponses=mesures.get("eda_reponses"),
+            frequence_respiratoire=mesures.get("respiration"),
+        ))
+    db.commit()
 
     return evaluation
 
