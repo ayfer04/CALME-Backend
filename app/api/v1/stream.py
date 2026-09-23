@@ -16,7 +16,10 @@ async def stream(websocket: WebSocket, session_id: int):
             # Le client ne pousse rien d'autre qu'un ping : on attend
             # simplement qu'il se taise pour detecter la deconnexion.
             await asyncio.wait_for(websocket.receive_text(), timeout=60)
-    except (WebSocketDisconnect, asyncio.TimeoutError, Exception):
+    except (WebSocketDisconnect, asyncio.TimeoutError):
+        # Ces deux exceptions sont attendues et normales : deconnexion client
+        # ou timeout de 60 secondes. Toute autre erreur remonte pour que les
+        # erreurs inattendues ne disparaissent pas en silence.
         pass
     finally:
         hub.quitter(session_id, websocket)

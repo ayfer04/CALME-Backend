@@ -41,3 +41,29 @@ async def test_un_socket_mort_ne_bloque_pas_les_autres():
 
     assert len(vivant.recus) == 1
     assert mort not in hub._salles[1]
+
+
+@pytest.mark.asyncio
+async def test_la_salle_se_vide_quand_tout_le_monde_quitte():
+    hub = Hub()
+    socket = FauxSocket()
+    hub.rejoindre(1, socket)
+    assert 1 in hub._salles
+
+    hub.quitter(1, socket)
+    assert 1 not in hub._salles
+
+
+@pytest.mark.asyncio
+async def test_la_salle_se_vide_quand_tous_les_sockets_morts_sont_retires():
+    class SocketMort(FauxSocket):
+        async def send_json(self, donnees):
+            raise RuntimeError("ferme")
+
+    hub = Hub()
+    mort = SocketMort()
+    hub.rejoindre(1, mort)
+    assert 1 in hub._salles
+
+    await hub.diffuser(1, {"type": "notice", "payload": {}})
+    assert 1 not in hub._salles

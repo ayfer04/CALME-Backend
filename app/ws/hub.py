@@ -16,6 +16,9 @@ class Hub:
 
     def quitter(self, session_id: int, socket) -> None:
         self._salles[session_id].discard(socket)
+        # Nettoyer la salle si elle est vide
+        if not self._salles[session_id]:
+            del self._salles[session_id]
 
     async def diffuser(self, session_id: int, evenement: dict) -> None:
         morts = []
@@ -26,6 +29,9 @@ class Hub:
                 morts.append(socket)
         for socket in morts:
             self._salles[session_id].discard(socket)
+        # Nettoyer la salle si elle est vide
+        if session_id in self._salles and not self._salles[session_id]:
+            del self._salles[session_id]
 
 
 hub = Hub()
