@@ -1,5 +1,3 @@
-import asyncio
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.ws.hub import hub
@@ -13,13 +11,13 @@ async def stream(websocket: WebSocket, session_id: int):
     hub.rejoindre(session_id, websocket)
     try:
         while True:
-            # Le client ne pousse rien d'autre qu'un ping : on attend
-            # simplement qu'il se taise pour detecter la deconnexion.
-            await asyncio.wait_for(websocket.receive_text(), timeout=60)
-    except (WebSocketDisconnect, asyncio.TimeoutError):
-        # Ces deux exceptions sont attendues et normales : deconnexion client
-        # ou timeout de 60 secondes. Toute autre erreur remonte pour que les
-        # erreurs inattendues ne disparaissent pas en silence.
+            # Le client n'envoie rien, ne fait qu'ecouter. On attend le
+            # receive_text() qui bloque jusqu'a deconnexion. Uvicorn detecte
+            # les pairs morts via ses pings WebSocket (20 s par defaut) meme
+            # sans trame de fermeture, ce qui permet de gerer les scenarios
+            # de coupure reseau brutale.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
         pass
     finally:
         hub.quitter(session_id, websocket)

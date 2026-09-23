@@ -1,6 +1,10 @@
 import pytest
+from datetime import datetime, timezone
 from pydantic import ValidationError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session as DbSession, sessionmaker
 
+from app.models.tables import Base, Astronaute, Session as SessionModel, Mesure
 from app.schemas.ingest import IngestMessage
 
 BASE = {
@@ -28,3 +32,46 @@ def test_reste_compatible_avec_le_simulateur():
 def test_rejette_un_intervalle_hors_bornes():
     with pytest.raises(ValidationError):
         IngestMessage(**BASE, ibi_ms=[120])
+
+
+def test_stocke_le_courant_en_base():
+    """Verifie qu'un message avec ma produit une ligne capteur=courant."""
+    # Setup SQLite in-memory
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    db = SessionLocal()
+
+    # Create astronaute and session
+    astronaute = Astronaute(nom="Astronaute de test")
+    db.add(astronaute)
+    db.flush()
+
+    session = SessionModel(
+        astronaute_id=astronaute.id,
+        debut=datetime.now(timezone.utc),
+        mode="normal",
+    )
+    db.add(session)
+    db.flush()
+
+    # Ingest a message with ma
+    message = IngestMessage(**BASE, ma=212.0)
+    db.add(
+        Mesure(
+            session_id=session.id,
+            device_id=message.device_id,
+            capteur="courant",
+            seq=message.seq,
+            ts=message.ts,
+            valeurs={"ma": message.ma},
+            qualite={},
+        )
+    )
+    db.commit()
+
+    # Verify the courant mesure was stored
+    mesure = db.query(Mesure).filter(Mesure.capteur == "courant").first()
+    assert mesure is not None
+    assert mesure.valeurs["ma"] == 212.0
+    assert mesure.session_id == session.id

@@ -79,6 +79,19 @@ def ingest(message: IngestMessage, db: DbSession = Depends(get_db)):
             )
         )
 
+    if message.ma is not None:
+        db.add(
+            Mesure(
+                session_id=session.id,
+                device_id=message.device_id,
+                capteur="courant",
+                seq=message.seq,
+                ts=message.ts,
+                valeurs={"ma": message.ma},
+                qualite={},
+            )
+        )
+
     db.commit()
 
     return {"recu": True, "seq": message.seq, "session_id": session.id}
