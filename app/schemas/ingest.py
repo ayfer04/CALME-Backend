@@ -15,7 +15,10 @@ class IngestMessage(BaseModel):
     seq: int = Field(ge=0)
     ibi_ms: list[int] = Field(default_factory=list)
     eda_us: list[float] = Field(default_factory=list)
+    ppg_raw: list[int] = Field(default_factory=list)
+    ma: float | None = None
     qualite: Qualite
+    sig: str | None = None
 
     @field_validator("ibi_ms")
     @classmethod
