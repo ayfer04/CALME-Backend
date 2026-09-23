@@ -51,8 +51,10 @@ def test_recommander_sur_une_evaluation_inconnue_est_refuse(client):
 def test_recommander_sans_exercice_autorise_ne_fabrique_rien(client, db_session, monkeypatch):
     """Niveau 'unreliable' : exercices_autorises() renvoie une liste vide, et
     rediger() renvoie alors exercice=None. Le contrat TS attend un Exercise
-    non-nul, mais fabriquer un exercice qui n'a pas ete choisi serait pire
-    que de laisser passer ce None : voir la reserve dans le rapport.
+    non-nul (Frontend/src/api/types.ts, Recommendation.exercise) : plutot que
+    d'y placer un exercise=None qui violerait ce contrat, la route renvoie
+    null - il n'y a pas de recommandation a faire, et pretendre le contraire
+    serait plus malhonnete qu'un null.
     """
     monkeypatch.setattr("app.services.consigne.interroger_modele", lambda *a, **k: None)
     decision = _decision(db_session, niveau="unreliable",
@@ -60,9 +62,13 @@ def test_recommander_sans_exercice_autorise_ne_fabrique_rien(client, db_session,
 
     reponse = client.post(f"/api/v1/assessments/{decision.assessment_id}/recommend")
     assert reponse.status_code == 200
-    corps = reponse.json()
-    assert corps["exercise"] is None
-    assert corps["source"] == "rules"
+    assert reponse.json() is None
+
+    # La decision garde neanmoins la trace : pas d'exercice declenche, mais
+    # le message de maintenance persiste (pour /sessions/{id}/assessment).
+    db_session.refresh(decision)
+    assert decision.exercice_id is None
+    assert decision.exercice_declenche is False
 
 
 def test_feedback_est_persiste_et_relie_a_la_bonne_decision(client, db_session, monkeypatch):

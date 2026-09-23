@@ -49,6 +49,14 @@ def recommander(assessment_id: str, db: DbSession = Depends(get_db)):
     decision.source = source
     db.commit()
 
+    if exercice is None:
+        # Mesure inexploitable (niveau 'unreliable') : il n'y a pas de
+        # recommandation a faire. Renvoyer un objet avec exercise=None
+        # violerait le contrat non nullable du front
+        # (Frontend/src/api/types.ts, Recommendation.exercise) ; null est
+        # honnete, une fausse recommandation ne le serait pas.
+        return None
+
     return {
         "id": f"{PREFIXE_RECOMMANDATION}{decision.assessment_id}",
         "assessmentId": decision.assessment_id,

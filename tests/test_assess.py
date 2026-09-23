@@ -160,3 +160,43 @@ def test_assess_dune_autre_seance_du_meme_astronaute_nest_jamais_dans_son_propre
     seconde = client.post(f"/api/v1/sessions/{session.id}/assess").json()
 
     assert premiere["personalBaseline"] == seconde["personalBaseline"] == 42.0
+
+
+# ---------------------------------------------------------------------------
+# Palier 'unreliable' : rediger() renvoie exercice=None, et ni l'evenement
+# WebSocket ni la reponse HTTP ne doivent alors prétendre a une recommandation
+# (voir tache-24, correction 2 : Frontend/src/api/types.ts declare
+# Recommendation.exercise non-nullable).
+# ---------------------------------------------------------------------------
+
+def test_assess_niveau_unreliable_pousse_un_notice_jamais_une_recommandation_a_null(
+    client, db_session, monkeypatch
+):
+    monkeypatch.setattr("app.services.consigne.interroger_modele", lambda *a, **k: None)
+    astro = _astronaute(db_session)
+    session = _session_ouverte(db_session, astro)
+    db_session.commit()
+    # Aucune mesure : tous les signaux manquent, la confiance calculee est
+    # nulle, donc le niveau est 'unreliable' et exercices_autorises() est vide.
+
+    with client.websocket_connect(f"/api/v1/sessions/{session.id}/stream") as ws:
+        reponse = client.post(f"/api/v1/sessions/{session.id}/assess")
+        assert reponse.status_code == 200
+        evaluation = reponse.json()
+        assert evaluation["level"] == "unreliable"
+
+        evenement_assessment = ws.receive_json()
+        assert evenement_assessment["type"] == "assessment"
+
+        # Jamais d'evenement 'recommendation' avec exercise=None : un 'notice'
+        # a la place, avec le message de maintenance.
+        evenement_suivant = ws.receive_json()
+        assert evenement_suivant["type"] == "notice"
+        assert evenement_suivant["payload"]["level"] == "warning"
+        assert "exploitable" in evenement_suivant["payload"]["message"].lower()
+
+    # Le endpoint HTTP direct suit le meme principe : pas de Recommendation
+    # avec exercise=None, un null honnete a la place.
+    reco = client.post(f"/api/v1/assessments/{evaluation['id']}/recommend")
+    assert reco.status_code == 200
+    assert reco.json() is None

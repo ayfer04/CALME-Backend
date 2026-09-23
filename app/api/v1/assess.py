@@ -160,15 +160,26 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
 
     autorises = exercices_autorises(evaluation["level"])
     exercice, message, source, modele = rediger(evaluation, autorises, historique=[])
-    recommandation = {
-        "id": f"reco-{evaluation['id']}",
-        "assessmentId": evaluation["id"],
-        "exercise": exercice,
-        "message": message,
-        "source": source,
-        "modelName": modele,
-    }
-    await hub.diffuser(session_id, {"type": "recommendation", "payload": recommandation})
+    if exercice is not None:
+        recommandation = {
+            "id": f"reco-{evaluation['id']}",
+            "assessmentId": evaluation["id"],
+            "exercise": exercice,
+            "message": message,
+            "source": source,
+            "modelName": modele,
+        }
+        await hub.diffuser(session_id, {"type": "recommendation", "payload": recommandation})
+    else:
+        # Mesure inexploitable (palier 'unreliable') : il n'y a pas de
+        # recommandation a faire. En emettre une avec exercise=None violerait
+        # le contrat non nullable du front (Frontend/src/api/types.ts,
+        # Recommendation.exercise) - prevenir avec un 'notice' est plus
+        # honnete que de mentir sur la forme.
+        await hub.diffuser(session_id, {
+            "type": "notice",
+            "payload": {"level": "warning", "message": message},
+        })
 
     # Persistance : sans elle, GET /sessions/{id}/assessment,
     # POST /assessments/{id}/recommend et POST /recommendations/{id}/feedback
