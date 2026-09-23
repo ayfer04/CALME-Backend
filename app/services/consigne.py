@@ -12,8 +12,26 @@ pas sa fonction.
 
 import os
 
+import httpx
+
 MODELE = os.environ.get("MODELE_OLLAMA", "llama3.2:3b")
+# Palier intermediaire de la chaine de repli : un modele plus petit, tente
+# une seule fois si le modele nominal echoue ou repond hors-liste, avant de
+# retomber sur les regles. C'est lui qui explique le nom de modele affiche
+# quand le nominal est indisponible mais qu'une consigne personnalisee
+# reste possible.
+MODELE_DEGRADE = os.environ.get("MODELE_OLLAMA_DEGRADE", "llama3.2:1b")
 HOTE_OLLAMA = os.environ.get("HOTE_OLLAMA", "http://localhost:11434")
+
+# Delai de connexion : tres court, expres. Detecter qu'Ollama ne repond pas
+# ne doit pas couter le meme prix qu'une vraie generation. Sur un budget total
+# de 30 s entre la fin de la mesure et l'affichage de la consigne, un hote
+# injoignable (service gele, paquets perdus, pas de refus explicite) ne doit
+# pas immobiliser tout le systeme le temps d'un DELAI_MAX_S complet, et ce
+# pour chacune des deux tentatives (nominal puis degrade).
+DELAI_CONNEXION_S = 2.0
+# Delai de lecture : le temps qu'on tolere pour une vraie generation, une
+# fois la connexion etablie.
 DELAI_MAX_S = 12.0
 
 CONSIGNES_GENERIQUES: dict[str, str] = {
@@ -40,12 +58,14 @@ SYSTEME = (
 )
 
 
-def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[dict]) -> dict | None:
+def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[dict],
+                       modele: str = MODELE) -> dict | None:
     """Renvoie None en cas d'indisponibilite : l'appelant gere le repli."""
     try:
         import ollama
 
-        client = ollama.Client(host=HOTE_OLLAMA, timeout=DELAI_MAX_S)
+        delai = httpx.Timeout(DELAI_MAX_S, connect=DELAI_CONNEXION_S)
+        client = ollama.Client(host=HOTE_OLLAMA, timeout=delai)
         liste = "\n".join(f"- {e['id']} : {e['name']} ({e['duration']} min, {e['indication']})"
                           for e in autorises)
         schema = {
@@ -57,7 +77,7 @@ def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[
             "required": ["exercice_id", "message"],
         }
         reponse = client.chat(
-            model=MODELE,
+            model=modele,
             messages=[
                 {"role": "system", "content": SYSTEME},
                 {"role": "user", "content":
@@ -78,12 +98,17 @@ def rediger(evaluation: dict, autorises: list[dict],
         return None, MESSAGE_MAINTENANCE, "rules", None
 
     defaut = autorises[0]
-    propose = interroger_modele(evaluation, autorises, historique)
 
-    if propose:
-        choisi = next((e for e in autorises if e["id"] == propose.get("exercice_id")), None)
-        message = (propose.get("message") or "").strip()
-        if choisi and message:
-            return choisi, message, "model", MODELE
+    # Une seule tentative de repli vers le modele degrade, pas une boucle :
+    # le budget est de 30 secondes au total, pas l'eternite. Deux etages
+    # suffisent a montrer la degradation progressive (nominal, puis plus
+    # petit, puis regles) sans faire attendre l'utilisateur indefiniment.
+    for candidat in (MODELE, MODELE_DEGRADE):
+        propose = interroger_modele(evaluation, autorises, historique, modele=candidat)
+        if propose:
+            choisi = next((e for e in autorises if e["id"] == propose.get("exercice_id")), None)
+            message = (propose.get("message") or "").strip()
+            if choisi and message:
+                return choisi, message, "model", candidat
 
     return defaut, CONSIGNES_GENERIQUES[defaut["id"]], "rules", None
