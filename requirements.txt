@@ -24,7 +24,15 @@ mdurl==0.1.2
 neurokit2==0.2.13
 numpy==2.5.3
 ollama==0.6.2
-opensmile==2.6.0
+# opensmile n'a pas une seule version qui convienne aux deux plateformes :
+# 2.6.0 est la seule a fournir une bibliotheque arm64 (necessaire pour
+# demarrer en developpement sur ce Mac Apple Silicon) ; 2.4.2 est la
+# derniere a fournir une roue Linux (necessaire pour installer dans le
+# conteneur de deploiement, ou 2.6.0 n'a aucune roue manylinux). Sans ces
+# marqueurs d'environnement, soit le developpement ne demarre pas, soit le
+# deploiement echoue.
+opensmile==2.6.0 ; sys_platform == "darwin"
+opensmile==2.4.2 ; sys_platform != "darwin"
 packaging==26.3
 pluggy==1.6.0
 psycopg==3.3.6

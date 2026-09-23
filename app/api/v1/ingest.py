@@ -16,7 +16,21 @@ def verifier_signature(message: IngestMessage, cle: str) -> bool:
     """HMAC-SHA256 sur device_id | seq | ts.
 
     Le numero de sequence est dans la signature : sans lui, un message capture
-    pourrait etre rejoue indefiniment avec la meme signature valide.
+    pourrait etre modifie puis rejoue avec un autre seq et rester valide.
+
+    Ce que cette fonction NE fait PAS, delibrement : rejeter le rejeu a
+    l'identique (meme device_id, meme seq, meme ts, meme sig). Deux parades
+    classiques existent et ont ete ecartees toutes les deux :
+    - Un numero de sequence strictement croissant par appareil casserait le
+      rejeu du tampon hors ligne de la passerelle : apres un redemarrage elle
+      repart de seq=0 et ses messages legitimes en retard seraient tous
+      rejetes. Ce tampon est le point de demonstration n°3 du projet.
+    - Une fenetre de fraicheur sur `ts` casserait tout des que l'horloge du
+      Raspberry Pi derive : pas d'horloge sauvegardee par pile, pas de NTP en
+      fonctionnement hors ligne. Rejeter sur l'horodatage echangerait un
+      risque de rejeu contre une panne totale et silencieuse.
+    Le rejeu a l'identique reste donc possible : c'est un compromis assume,
+    pas un oubli.
     """
     if not message.sig:
         return False
@@ -56,15 +70,22 @@ def get_or_create_session(db: DbSession) -> SessionModel:
 @router.post("/ingest", status_code=status.HTTP_202_ACCEPTED)
 def ingest(message: IngestMessage, db: DbSession = Depends(get_db)):
     appareil = db.query(Appareil).filter(Appareil.device_id == message.device_id).first()
-    if appareil and not verifier_signature(message, appareil.cle_signature):
+    if not appareil or not verifier_signature(message, appareil.cle_signature):
         # Journalise et rejette. Un capteur qui parle mal n'est pas une urgence
         # medicale, c'est un capteur qui deconne - ou quelqu'un d'autre.
-        print(f"signature refusee: {message.device_id} seq={message.seq}", flush=True)
+        # Un appareil absent de la table `appareils` est refuse au meme titre
+        # qu'une signature invalide : la porte ouverte precedente (laisser
+        # passer tout device_id inconnu) rendait le controle contournable par
+        # sa propre entree. Desormais chaque appareil autorise, y compris le
+        # simulateur, est declare avec sa cle (voir la migration de donnees).
+        #
+        # !r (repr) plutot qu'une interpolation brute : device_id vient du
+        # reseau et n'est pas fiable. Sans cet echappement, un device_id
+        # contenant un retour a la ligne pourrait fabriquer de fausses lignes
+        # dans le journal qui sert precisement a prouver qu'on a rejete
+        # quelque chose (injection de journal).
+        print(f"signature refusee: {message.device_id!r} seq={message.seq}", flush=True)
         raise HTTPException(status_code=401, detail="signature invalide")
-    # Un appareil inconnu de la table `appareils` reste accepte sans verification :
-    # c'est une porte ouverte assumee pour la demonstration (elle laisse tourner
-    # simulator/send_measures.py sans cle), pas un oubli. A durcir en refusant
-    # aussi les appareils non declares, si le temps le permet.
 
     session = get_or_create_session(db)
 

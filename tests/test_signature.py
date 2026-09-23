@@ -1,7 +1,13 @@
 import hashlib
 import hmac
 
-from app.api.v1.ingest import verifier_signature
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.api.v1.ingest import ingest, verifier_signature
+from app.models.tables import Base
 from app.schemas.ingest import IngestMessage
 
 CLE = "cle-de-test"
@@ -34,3 +40,23 @@ def test_refuse_un_message_rejoue_avec_un_autre_seq():
     """La signature couvre le numero de sequence : on ne peut pas rejouer."""
     m = IngestMessage(**{**BASE, "seq": 8}, sig=signer("cabine-01", 7, BASE["ts"], CLE))
     assert verifier_signature(m, CLE) is False
+
+
+def test_refuse_un_appareil_inconnu():
+    """Ronde de correction 1 : un device_id absent de `appareils` est rejete
+
+    au meme titre qu'une signature invalide - la porte ouverte precedente
+    (laisser passer tout appareil non declare) rendait le controle
+    contournable par sa propre entree.
+    """
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+
+    # BASE porte device_id="cabine-01", volontairement absent de cette base
+    # en memoire : aucun appareil n'y est jamais enregistre.
+    m = IngestMessage(**BASE, sig=signer("cabine-01", 7, BASE["ts"], CLE))
+
+    with pytest.raises(HTTPException) as exc_info:
+        ingest(m, db)
+    assert exc_info.value.status_code == 401
