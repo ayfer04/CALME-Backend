@@ -10,7 +10,10 @@ import neurokit2 as nk
 import numpy as np
 
 FE_INTERP = 4.0        # Hz, tres au-dessus de la bande d'interet
-DUREE_MIN_S = 55.0     # il faut ~60 s pour resoudre 0,1 Hz
+DUREE_MIN_S = 55.0     # 60 s sont necessaires en theorie pour resoudre 0,1 Hz ;
+                        # on accepte 55 s pour absorber les battements rejetes
+                        # par nettoyer_rr, en dessous la resolution frequentielle
+                        # ne permet plus de trancher.
 
 
 def frequence_respiratoire(rr_ms: list[float]) -> float | None:

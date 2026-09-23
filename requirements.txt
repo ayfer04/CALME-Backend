@@ -25,6 +25,7 @@ Mako==1.4.1
 markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
+neurokit2==0.2.13
 numpy==2.5.3
 packaging==26.3
 pluggy==1.6.0

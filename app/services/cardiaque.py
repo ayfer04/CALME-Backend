@@ -33,9 +33,14 @@ def nettoyer_rr(rr: list[float]) -> list[float]:
     valeurs = np.asarray([v for v in rr if IBI_MIN_MS <= v <= IBI_MAX_MS], dtype=float)
     if valeurs.size < 2:
         return valeurs.tolist()
-    ecarts = np.abs(np.diff(valeurs))
-    garde = ecarts < 0.2 * valeurs[:-1]
-    return np.concatenate(([valeurs[0]], valeurs[1:][garde])).tolist()
+    propres = [float(valeurs[0])]
+    for valeur in valeurs[1:]:
+        # On compare au dernier intervalle RETENU, pas au precedent dans le
+        # tableau : sinon un artefact rejete sert de reference au suivant et
+        # entraine un intervalle parfaitement valide dans sa chute.
+        if abs(valeur - propres[-1]) < 0.2 * propres[-1]:
+            propres.append(float(valeur))
+    return propres
 
 
 def fc_moyenne(rr: list[float]) -> float | None:

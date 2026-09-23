@@ -22,6 +22,14 @@ def test_nettoyer_ecarte_les_sauts_et_les_hors_bornes():
     assert 100.0 not in propre
 
 
+def test_nettoyer_rejette_un_battement_rate_sans_perdre_les_valides_autour():
+    # 1650 est un battement rate (intervalle double, mais dans les bornes
+    # physiologiques) : il doit etre ecarte sans faire tomber le 838 qui suit,
+    # lequel est parfaitement valide par rapport a son predecesseur retenu (810).
+    rr = [800.0, 810.0, 1650.0, 838.0, 795.0, 805.0]
+    assert nettoyer_rr(rr) == [800.0, 810.0, 838.0, 795.0, 805.0]
+
+
 def test_renvoie_none_sur_serie_trop_courte():
     assert fc_moyenne([]) is None
     assert rmssd([800.0]) is None
