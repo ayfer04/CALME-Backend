@@ -201,12 +201,14 @@ RMSSD et SDNN se calculent à la main en trois lignes — inutile de passer par
 ### 7.2 Sudation
 
 ```python
-sig, info = nk.eda_process(eda_us, sampling_rate=10, method="highpass")
+sig, info = nk.eda_process(eda_us, sampling_rate=10, method_phasic="highpass")
 eda_fond     = float(sig["EDA_Tonic"].mean())
 eda_reponses = len(info["SCR_Peaks"]) * 60.0 / duree_s      # réponses par minute
 ```
 
-`method="highpass"` d'abord : pas de dépendance supplémentaire. cvxEDA (`method="cvxeda"`,
+`method_phasic="highpass"` — attention, le paramètre `method` pilote le *nettoyage*
+et n'accepte que `neurokit` ou `biosppy` ; lui passer `"highpass"` lève une
+`ValueError`. Vérifié sur NeuroKit2 0.2.13. Pas de dépendance supplémentaire. cvxEDA (`method="cvxeda"`,
 nécessite `cvxopt`) est plus propre — à tenter jeudi seulement.
 
 ### 7.3 Fréquence respiratoire — dérivée du rythme cardiaque (EDR)
@@ -269,7 +271,7 @@ bruit. On les **exclut** de l'indice. On garde le sous-ensemble robuste :
 | `F0semitoneFrom27.5Hz_sma3nz_stddevNorm` | monotonie / instabilité | 0,15 |
 | `loudness_sma3_amean` | intensité ↑ (meilleur indicateur en littérature) | 0,25 |
 | `VoicedSegmentsPerSec` | débit de parole ↑ | 0,20 |
-| `MeanUnvoicedSegmentLengthSec` | proportion de silences ↑ (repli) | 0,15 |
+| `MeanUnvoicedSegmentLength` | proportion de silences ↑ (repli) | 0,15 |
 
 eGeMAPS donne déjà le débit et les silences : **`praat-parselmouth` et `silero-vad`
 deviennent inutiles**. Une seule bibliothèque au lieu de trois.

@@ -922,7 +922,10 @@ def indicateurs_eda(eda: list[float], fe: int = 10) -> tuple[float | None, float
 
     signal = np.asarray(eda, dtype=float)
     try:
-        signaux, info = nk.eda_process(signal, sampling_rate=fe, method="highpass")
+        # Attention : le parametre `method` d'eda_process pilote le NETTOYAGE et
+        # n'accepte que 'neurokit' ou 'biosppy'. La decomposition tonique /
+        # phasique se choisit avec `method_phasic`. Verifie sur NeuroKit2 0.2.13.
+        signaux, info = nk.eda_process(signal, sampling_rate=fe, method_phasic="highpass")
     except Exception:
         # Un signal plat ou sature fait echouer la decomposition. Ce n'est pas
         # une erreur du systeme, c'est un capteur qui ne dit rien : on le dit.
@@ -1910,7 +1913,23 @@ FEATURES: dict[str, float] = {
     "F0semitoneFrom27.5Hz_sma3nz_stddevNorm": 0.15,   # instabilite / monotonie
     "loudness_sma3_amean": 0.25,                      # intensite
     "VoicedSegmentsPerSec": 0.20,                     # debit de parole
-    "MeanUnvoicedSegmentLengthSec": 0.15,             # proportion de silences
+    "MeanUnvoicedSegmentLength": 0.15,             # proportion de silences
+}
+
+# Ordres de grandeur pour de la parole adulte a 16 kHz. Ils ne servent qu'aux
+# premieres seances d'une personne, avant que son historique existe, et la
+# confiance est alors multipliee par 0,6. A reetalonner jeudi sur les
+# enregistrements reels : ce sont des estimations de conception.
+#
+# Ne JAMAIS mettre (0.0, 1.0) ici : la hauteur moyenne vaut une trentaine de
+# demi-tons, un ecart-type de 1 donnerait un z borne a +3, et l'indice vocal
+# sortirait a 1,0 pour tout le monde — tout l'equipage en rouge.
+BASELINE_VOCALE_GENERIQUE: dict[str, tuple[float, float]] = {
+    "F0semitoneFrom27.5Hz_sma3nz_amean": (31.0, 5.0),
+    "F0semitoneFrom27.5Hz_sma3nz_stddevNorm": (0.17, 0.05),
+    "loudness_sma3_amean": (0.80, 0.40),
+    "VoicedSegmentsPerSec": (2.20, 0.70),
+    "MeanUnvoicedSegmentLength": (0.20, 0.08),
 }
 
 _smile = None
@@ -2007,14 +2026,14 @@ async def recevoir_audio(session_id: int, fichier: UploadFile = File(...)):
     Pas de fichier temporaire, pas de chemin sur disque : la seule chose qui
     survit a cet appel est un nombre entre 0 et 1.
     """
-    from app.services.voix import FEATURES, features_depuis_wav, indice_vocal
+    from app.services.voix import (BASELINE_VOCALE_GENERIQUE,
+                                   features_depuis_wav, indice_vocal)
 
     octets = await fichier.read()
     features = features_depuis_wav(octets)
     del octets
 
-    baseline = {cle: (0.0, 1.0) for cle in FEATURES}   # a remplacer par l'historique
-    indice = indice_vocal(features, baseline)
+    indice = indice_vocal(features, BASELINE_VOCALE_GENERIQUE)
 
     await hub.diffuser(session_id, {
         "type": "frame",
