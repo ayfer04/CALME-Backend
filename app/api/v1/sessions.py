@@ -16,6 +16,7 @@ from app.api.v1.assess import (
     BASELINE_GENERIQUE,
     baseline_ou_generique,
     construire_assessment,
+    historique_indicateurs,
     signaux_manquants,
 )
 from app.api.v1.calcul import indicateurs_du_front, mesures_de_la_seance
@@ -105,12 +106,13 @@ def lire_evaluation(session_id: int, db: DbSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="aucune evaluation pour cette seance")
 
     # missingSignals, indicators et personalBaseline ne sont pas dans
-    # `decisions` : ce sont des projections pures des mesures brutes (ou,
-    # pour la baseline, une constante tant qu'aucun historique par
-    # astronaute n'est interroge), pas la decision elle-meme - les relire à
-    # l'identique n'a pas d'interet, les rederiver est sans risque.
+    # `decisions` : ce sont des projections pures des mesures brutes (et,
+    # pour la baseline, de l'historique de l'astronaute), pas la decision
+    # elle-meme - les relire à l'identique n'a pas d'interet, les rederiver
+    # est sans risque.
     mesures = mesures_de_la_seance(db, session_id)
-    baseline, _ = baseline_ou_generique([], BASELINE_GENERIQUE)
+    historique = historique_indicateurs(db, session.astronaute_id, session_id)
+    baseline, _ = baseline_ou_generique(historique, BASELINE_GENERIQUE)
 
     return {
         "id": decision.assessment_id,
@@ -177,7 +179,8 @@ def clore_session(session_id: int, db: DbSession = Depends(get_db)):
         or mesures_cloture.get("hrv_rmssd") is not None
     )
     if a_du_biologique:
-        baseline, facteur = baseline_ou_generique([], BASELINE_GENERIQUE)
+        historique = historique_indicateurs(db, session.astronaute_id, session_id)
+        baseline, facteur = baseline_ou_generique(historique, BASELINE_GENERIQUE)
         evaluation_cloture = construire_assessment(
             session_id, mesures_cloture, baseline, facteur, indicateurs_cloture
         )

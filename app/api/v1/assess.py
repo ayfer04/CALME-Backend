@@ -24,10 +24,10 @@ router = APIRouter()
 SEANCES_POUR_BASELINE = 10
 FACTEUR_BASELINE_GENERIQUE = 0.6
 
-# Baseline de repli, le temps qu'un historique par astronaute soit interroge
-# (pas encore fait : baseline_ou_generique() est toujours appelee avec un
-# historique vide). Module-level pour que sessions.py (clôture) la reutilise
-# sans la redupliquer.
+# Baseline de repli, tant que l'astronaute n'a pas assez de seances passees
+# pour une baseline personnelle (voir historique_indicateurs ci-dessous).
+# Module-level pour que sessions.py (clôture) la reutilise sans la
+# redupliquer.
 BASELINE_GENERIQUE = {
     "hrv_rmssd": (42.0, 15.0), "eda_reponses": (3.0, 2.0),
     "eda_fond": (5.0, 2.0), "fc_moyenne": (72.0, 9.0),
@@ -60,6 +60,32 @@ def baseline_ou_generique(historique: list[dict], generique: dict) -> tuple[dict
             continue
         base[cle] = (statistics.fmean(valeurs), statistics.stdev(valeurs))
     return base, 1.0
+
+
+def historique_indicateurs(db: DbSession, astronaute_id: int, session_id_exclue: int) -> list[dict]:
+    """Les indicateurs des seances precedentes de cet astronaute.
+
+    Jamais ceux de la seance en cours (session_id_exclue) : comparer
+    quelqu'un a lui-meme de la minute d'avant ne veut rien dire, seul un
+    historique d'autres seances constitue une vraie baseline personnelle.
+    """
+    lignes = (
+        db.query(Indicateur)
+        .filter(
+            Indicateur.astronaute_id == astronaute_id,
+            Indicateur.session_id != session_id_exclue,
+        )
+        .all()
+    )
+    return [
+        {
+            "hrv_rmssd": ligne.hrv_rmssd,
+            "eda_reponses": ligne.eda_reponses,
+            "eda_fond": ligne.eda_fond,
+            "fc_moyenne": ligne.fc_moyenne,
+        }
+        for ligne in lignes
+    ]
 
 
 def signaux_manquants(mesures: dict) -> list[dict]:
@@ -115,8 +141,18 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
     from app.services.exercices import exercices_autorises
     from app.api.v1.calcul import mesures_de_la_seance, indicateurs_du_front
 
+    # La baseline personnelle se construit sur les seances precedentes de cet
+    # astronaute, jamais sur la seance en cours (voir historique_indicateurs).
+    # Sans astronaute connu (session inexistante), pas d'historique possible :
+    # on retombe sur la generique, comme avant.
+    session = db.get(SessionModel, session_id)
+    historique = (
+        historique_indicateurs(db, session.astronaute_id, session_id)
+        if session is not None else []
+    )
+
     mesures = mesures_de_la_seance(db, session_id)
-    baseline, facteur = baseline_ou_generique([], BASELINE_GENERIQUE)
+    baseline, facteur = baseline_ou_generique(historique, BASELINE_GENERIQUE)
 
     indicateurs_bruts = indicateurs_du_front(mesures)
     evaluation = construire_assessment(session_id, mesures, baseline, facteur, indicateurs_bruts)
@@ -153,8 +189,8 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
 
     # Cliche "avant" des indicateurs bruts, pour que POST /sessions/{id}/close
     # puisse le relire tel quel plutot que de le deviner a partir de mesures
-    # qui auront continue d'arriver pendant l'exercice.
-    session = db.get(SessionModel, session_id)
+    # qui auront continue d'arriver pendant l'exercice, et pour que la
+    # prochaine seance de cet astronaute ait un historique a comparer.
     if session is not None:
         db.add(Indicateur(
             session_id=session_id,
