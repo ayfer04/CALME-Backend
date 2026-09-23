@@ -40,6 +40,19 @@ def get_or_create_session(db: DbSession) -> SessionModel:
 def ingest(message: IngestMessage, db: DbSession = Depends(get_db)):
     session = get_or_create_session(db)
 
+    if message.ppg_raw:
+        db.add(
+            Mesure(
+                session_id=session.id,
+                device_id=message.device_id,
+                capteur="ppg",
+                seq=message.seq,
+                ts=message.ts,
+                valeurs={"ppg_raw": message.ppg_raw},
+                qualite={"cardiaque": message.qualite.cardiaque},
+            )
+        )
+
     if message.ibi_ms:
         db.add(
             Mesure(
