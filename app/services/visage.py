@@ -22,28 +22,60 @@ import numpy as np
 SEUIL_RECONNAISSANCE = float(os.environ.get("SEUIL_RECONNAISSANCE_FACIALE", "0.6"))
 
 
+# Deux personnes trop proches l'une de l'autre : on ne tranche pas. Le meilleur
+# candidat doit devancer le second d'au moins cette distance.
+MARGE_ENTRE_CANDIDATS = float(os.environ.get("MARGE_RECONNAISSANCE_FACIALE", "0.05"))
+# Reconnu avec certitude sous ce seuil : l'empreinte du jour s'ajoute aux
+# references de la personne (lumiere, lunettes, barbe : la cabine apprend).
+SEUIL_APPRENTISSAGE = 0.45
+REFERENCES_MAX = 10
+
+
+def references(empreinte_faciale) -> list[list[float]]:
+    """Les empreintes de reference d'un astronaute. Les anciennes lignes n'en
+    gardaient qu'une (un vecteur plat) ; elles en gardent maintenant une liste."""
+    if not empreinte_faciale:
+        return []
+    if isinstance(empreinte_faciale[0], (int, float)):
+        return [list(empreinte_faciale)]
+    return [list(v) for v in empreinte_faciale]
+
+
+def ajouter_reference(empreinte_faciale, nouvelle: list[float]) -> list[list[float]]:
+    """Ajoute une reference, en gardant les plus recentes."""
+    return (references(empreinte_faciale) + [list(nouvelle)])[-REFERENCES_MAX:]
+
+
+def meilleure_correspondance(
+    empreinte: list[float], candidats: list[tuple[int, list[list[float]]]]
+) -> tuple[int | None, float | None]:
+    """(id, distance) du candidat retenu, ou (None, distance) si personne ne
+    correspond assez, ou si deux candidats sont trop proches pour trancher.
+
+    Distance d'un candidat = la plus petite distance a l'une de ses
+    references. Ne renvoie jamais "le moins pire" : se tromper de personne est
+    pire que ne reconnaitre personne, parce que les mesures de l'un iraient
+    alors dans le dossier de l'autre.
+    """
+    cible = np.asarray(empreinte, dtype=float)
+    distances = []
+    for candidat_id, refs in candidats:
+        if refs:
+            distances.append((min(float(np.linalg.norm(cible - np.asarray(r, dtype=float)))
+                                  for r in refs), candidat_id))
+    if not distances:
+        return None, None
+    distances.sort()
+    meilleure, meilleur_id = distances[0]
+    if meilleure >= SEUIL_RECONNAISSANCE:
+        return None, meilleure
+    if len(distances) > 1 and distances[1][0] - meilleure < MARGE_ENTRE_CANDIDATS:
+        return None, meilleure
+    return meilleur_id, meilleure
+
+
 def plus_proche_sous_seuil(
     empreinte: list[float], candidats: list[tuple[int, list[float]]]
 ) -> int | None:
-    """Renvoie l'id du candidat le plus proche, seulement s'il est sous le seuil.
-
-    Ne renvoie jamais "le moins pire" : au-dessus du seuil, personne n'est
-    identifie. Se tromper de personne est pire que ne reconnaitre personne,
-    parce que les mesures de stress de l'un iraient alors dans le dossier de
-    l'autre.
-    """
-    if not candidats:
-        return None
-
-    cible = np.asarray(empreinte, dtype=float)
-    meilleur_id: int | None = None
-    meilleure_distance: float | None = None
-    for candidat_id, vecteur in candidats:
-        distance = float(np.linalg.norm(cible - np.asarray(vecteur, dtype=float)))
-        if meilleure_distance is None or distance < meilleure_distance:
-            meilleure_distance = distance
-            meilleur_id = candidat_id
-
-    if meilleure_distance is None or meilleure_distance >= SEUIL_RECONNAISSANCE:
-        return None
-    return meilleur_id
+    """Forme historique : un seul vecteur par candidat."""
+    return meilleure_correspondance(empreinte, [(i, references(v)) for i, v in candidats])[0]

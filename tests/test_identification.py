@@ -155,3 +155,39 @@ def test_remplacer_lempreinte_valide_la_longueur_comme_a_lenrolement(client):
         f"/api/v1/crew/{cree['id']}/empreinte", json={"empreinte": [0.1] * 50}
     )
     assert reponse.status_code == 422
+
+
+def test_plusieurs_references_par_personne(client):
+    """Choisi dans la liste apres un echec, le visage du jour s'ajoute aux
+    references : la personne est reconnue sous les deux eclairages."""
+    cree = enroler(client, "Mei Tanaka", vecteur())
+    assert identifier(client, vecteur(decalage=5.0)) is None
+    r = client.post(f"/api/v1/crew/{cree['id']}/empreintes", json={"empreinte": vecteur(decalage=5.0)})
+    assert r.status_code == 200
+    assert identifier(client, vecteur(decalage=5.0))["id"] == cree["id"]
+    assert identifier(client, vecteur())["id"] == cree["id"]
+
+
+def test_deux_candidats_trop_proches_on_ne_tranche_pas(client):
+    enroler(client, "Mei Tanaka", vecteur())
+    enroler(client, "Ana Ferreira", vecteur(decalage=0.3))
+    # A 0,14 de l'une et 0,16 de l'autre : trop serre pour trancher.
+    assert identifier(client, vecteur(decalage=0.14)) is None
+    # Nettement plus proche de Mei : reconnue.
+    assert identifier(client, vecteur(decalage=0.02))["displayName"] == "Mei Tanaka"
+
+
+def test_une_reconnaissance_certaine_apprend_le_visage_du_jour(client, db_session):
+    cree = enroler(client, "Mei Tanaka", vecteur())
+    identifier(client, vecteur(decalage=0.2))
+    astronaute = db_session.get(Astronaute, int(cree["id"]))
+    db_session.refresh(astronaute)
+    assert len(astronaute.empreinte_faciale) == 2
+
+
+def test_une_ancienne_empreinte_simple_reste_lue(client, db_session):
+    """Les lignes d'avant ne gardaient qu'un vecteur plat."""
+    a = Astronaute(nom="Ancien", empreinte_faciale=vecteur())
+    db_session.add(a)
+    db_session.commit()
+    assert identifier(client, vecteur())["displayName"] == "Ancien"

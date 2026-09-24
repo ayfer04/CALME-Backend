@@ -150,7 +150,7 @@ def enroler(corps: EnrolementCorps, db: DbSession = Depends(get_db)):
     silencieusement l'empreinte d'un astronaute existant : cette route ne
     connait que displayName + empreinte, jamais un id a mettre a jour.
     """
-    astronaute = Astronaute(nom=corps.displayName, empreinte_faciale=corps.empreinte)
+    astronaute = Astronaute(nom=corps.displayName, empreinte_faciale=[corps.empreinte])
     db.add(astronaute)
     db.commit()
     db.refresh(astronaute)
@@ -177,9 +177,28 @@ def remplacer_empreinte(
     if astronaute is None:
         raise HTTPException(status_code=404, detail="astronaute introuvable")
 
-    astronaute.empreinte_faciale = corps.empreinte
+    astronaute.empreinte_faciale = [corps.empreinte]
     db.commit()
     db.refresh(astronaute)
+    return _crew_member(astronaute)
+
+
+@router.post("/crew/{crew_id}/empreintes")
+def ajouter_empreinte(
+    crew_id: str, corps: RemplacementEmpreinteCorps, db: DbSession = Depends(get_db)
+):
+    """Ajoute une reference a un astronaute, sans effacer les autres : la
+    cabine ne l'a pas reconnu, il a choisi son nom dans la liste, son visage
+    du jour la rendra meilleure la prochaine fois."""
+    try:
+        astronaute = db.get(Astronaute, int(crew_id))
+    except ValueError:
+        astronaute = None
+    if astronaute is None:
+        raise HTTPException(status_code=404, detail="astronaute introuvable")
+    astronaute.empreinte_faciale = visage.ajouter_reference(astronaute.empreinte_faciale,
+                                                            corps.empreinte)
+    db.commit()
     return _crew_member(astronaute)
 
 
@@ -191,11 +210,15 @@ def identifier(cabin_id: str, corps: IdentificationCorps, db: DbSession = Depend
     ceux qui n'ont jamais ete enroles (empreinte_faciale nulle) sont
     simplement absents des candidats, jamais une cause de plantage.
     """
-    candidats = [
-        (a.id, a.empreinte_faciale)
-        for a in db.query(Astronaute).filter(Astronaute.empreinte_faciale.isnot(None)).all()
-    ]
-    identifiant = visage.plus_proche_sous_seuil(corps.empreinte, candidats)
+    astronautes = db.query(Astronaute).filter(Astronaute.empreinte_faciale.isnot(None)).all()
+    candidats = [(a.id, visage.references(a.empreinte_faciale)) for a in astronautes]
+    identifiant, distance = visage.meilleure_correspondance(corps.empreinte, candidats)
     if identifiant is None:
         return None
-    return _crew_member(db.get(Astronaute, identifiant))
+    astronaute = db.get(Astronaute, identifiant)
+    if distance is not None and distance < visage.SEUIL_APPRENTISSAGE:
+        # Reconnu avec certitude : le visage du jour rejoint ses references.
+        astronaute.empreinte_faciale = visage.ajouter_reference(astronaute.empreinte_faciale,
+                                                                corps.empreinte)
+        db.commit()
+    return _crew_member(astronaute)
