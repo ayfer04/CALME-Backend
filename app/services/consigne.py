@@ -10,7 +10,9 @@ economiser l'energie, le systeme continue. Il perd sa capacite a personnaliser,
 pas sa fonction.
 """
 
+import html
 import os
+import re
 
 import httpx
 
@@ -67,22 +69,53 @@ MESSAGE_MAINTENANCE = (
 )
 
 SYSTEME = (
-    "Tu es l'assistant d'une cabine de recuperation a bord d'un vaisseau. "
-    "Tu choisis UN exercice dans la liste fournie et tu rediges une consigne "
-    "de deux phrases maximum, calme, en tutoyant, sans emoji, sans "
-    "diagnostic medical. Tu ne proposes rien qui ne soit pas dans la liste. "
-    "Tu reprends le deroule de l'exercice choisi tel qu'il est donne : tu n'en "
-    "changes jamais les durees ni les rythmes."
+    "Tu es la voix d'une cabine de recuperation a bord d'un vaisseau. Tu choisis "
+    "UN exercice dans la liste fournie et tu ecris UNE seule phrase courte et "
+    "chaleureuse, en tutoyant, qui donne envie de le faire. Cette phrase ne "
+    "contient aucune instruction, aucun chiffre, aucune duree : le deroule exact "
+    "est lu juste apres elle. Pas d'emoji, pas de diagnostic medical. Tu ne "
+    "parles jamais de la liste, des capteurs, de la mesure ni de ton raisonnement."
 )
 
 
 def contexte_mesure(evaluation: dict) -> str:
     if evaluation.get("level") == "unreliable":
         # Pas d'indice a citer : il ne repose que sur une partie des capteurs.
-        return ("Mesure incomplete : peu de capteurs ont repondu, le niveau de "
-                "charge n'est pas fiable. Dis-le simplement en une courte phrase, "
-                "sans alarmer, puis propose l'exercice choisi.")
+        # La phrase "ma mesure est incomplete" est ajoutee par le code (voir
+        # rediger) : le modele ne l'ecrit pas, il redige seulement la consigne.
+        return ("Mesure incomplete : le niveau de charge n'est pas fiable. Propose "
+                "simplement l'exercice, sans en parler.")
     return f"Indice de charge : {evaluation['index']} sur 100, palier {evaluation['level']}."
+
+
+ACCROCHE_MAX = 160
+
+
+def nettoyer_accroche(texte: str) -> str:
+    """Une phrase d'accroche, ou rien. Le 3b deborde parfois : consignes
+    melangees, chiffres, entites HTML (&#39;). On garde la premiere phrase, et
+    on la jette si elle contient une duree ou un chiffre - le deroule exact
+    suit de toute facon."""
+    texte = " ".join(html.unescape(texte or "").split())
+    premiere = re.split(r"(?<=[.!?])\s", texte, maxsplit=1)[0].strip()
+    if not premiere or len(premiere) > ACCROCHE_MAX:
+        return ""
+    if re.search(r"\d|\b(temps|minutes?|secondes?)\b", premiere, re.IGNORECASE):
+        return ""
+    return premiere
+
+
+def assembler(accroche: str, exercice: dict, evaluation: dict) -> str:
+    """La consigne affichee et lue : l'accroche du modele (s'il y en a une),
+    puis le deroule exact du catalogue. Le modele ne recopie plus les durees :
+    un 3b melangeait les rythmes d'un exercice a l'autre."""
+    parties = []
+    if evaluation.get("level") == "unreliable":
+        parties.append(PREFIXE_MESURE_PARTIELLE.strip())
+    elif nettoyer_accroche(accroche):
+        parties.append(nettoyer_accroche(accroche))
+    parties.append(CONSIGNES_GENERIQUES.get(exercice["id"], ""))
+    return " ".join(p for p in parties if p)
 
 
 def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[dict],
@@ -105,8 +138,9 @@ def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[
         dominant = evaluation.get("dominantSignal")
         # La liste arrive deja triee (les plus adaptes au signal dominant
         # d'abord) : le modele sait pourquoi, et peut s'y tenir.
-        oriente = (f"\nCe que la mesure a vu d'abord : {LIBELLES_SIGNAUX[dominant]}. "
-                   f"Les premiers exercices de la liste y repondent le mieux."
+        # La liste arrive deja triee (les plus adaptes d'abord) ; on dit au
+        # modele pourquoi, sans lui demander de le repeter.
+        oriente = (f"\nCe que la mesure a vu d'abord : {LIBELLES_SIGNAUX[dominant]}."
                    if dominant in LIBELLES_SIGNAUX else "")
         schema = {
             "type": "object",
@@ -148,9 +182,6 @@ def rediger(evaluation: dict, autorises: list[dict],
             choisi = next((e for e in autorises if e["id"] == propose.get("exercice_id")), None)
             message = (propose.get("message") or "").strip()
             if choisi and message:
-                return choisi, message, "model", candidat
+                return choisi, assembler(message, choisi, evaluation), "model", candidat
 
-    message = CONSIGNES_GENERIQUES[defaut["id"]]
-    if evaluation.get("level") == "unreliable":
-        message = PREFIXE_MESURE_PARTIELLE + message
-    return defaut, message, "rules", None
+    return defaut, assembler("", defaut, evaluation), "rules", None
