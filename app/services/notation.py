@@ -20,7 +20,11 @@ filet de securite sur les mots de detresse ne depend pas de lui.
 
 import re
 
-POIDS = {"parole": 0.45, "visage": 0.30, "voix": 0.25}
+POIDS = {"parole": 0.50, "visage": 0.30, "voix": 0.20}
+# La note globale est a mi-chemin entre la moyenne ponderee et la PIRE note :
+# un visage neutre ne doit pas rattraper une conversation catastrophique
+# ("toute ma famille est morte" donnait 59, orange).
+PART_DU_PIRE = 0.5
 
 SEUIL_VERT = 60.0
 SEUIL_ORANGE = 35.0
@@ -42,7 +46,7 @@ def _borner(valeur: float) -> float:
 def note_visage(tension: float | None, sourire: float | None = None) -> float | None:
     if tension is None:
         return None
-    note = 95.0 - 200.0 * max(0.0, tension - TENSION_REPOS) + 25.0 * (sourire or 0.0)
+    note = 95.0 - 250.0 * max(0.0, tension - TENSION_REPOS) + 20.0 * (sourire or 0.0)
     return round(_borner(note), 1)
 
 
@@ -74,13 +78,28 @@ PLANCHER_MODELE = 16.0
 MOTS_MIN_HUMEUR = 4
 
 
+# Deuxieme niveau : pas des idees suicidaires, mais une souffrance grave
+# (deuil, desespoir). L'humeur tombe a 15, ce qui passe la seance au rouge.
+MOTS_GRAVES = re.compile(
+    r"\bmorte?s?\b|\bdécéd|\bdeced|\bdécès\b|\bdeces\b|\bdeuil\b|\btuée?s?\b|"
+    r"désespér|desesper|effondr|je n'en peux plus|j'en peux plus|je craque|"
+    r"plus la force|plus envie de rien|je me sens (vide|seul|nul)",
+    re.IGNORECASE,
+)
+HUMEUR_GRAVE = 15.0
+
+
 def detresse_exprimee(texte: str) -> bool:
-    return bool(texte) and bool(MOTS_DETRESSE.search(texte))
+    """Vrai si la phrase dit une detresse ou une souffrance grave : elle
+    l'emporte alors sur le reste de la conversation (voir calcul)."""
+    return bool(texte) and bool(MOTS_DETRESSE.search(texte) or MOTS_GRAVES.search(texte))
 
 
 def humeur_securisee(humeur: float | None, texte: str) -> float | None:
-    if detresse_exprimee(texte):
+    if texte and MOTS_DETRESSE.search(texte):
         return min(humeur if humeur is not None else 100.0, 5.0)
+    if texte and MOTS_GRAVES.search(texte):
+        return min(humeur if humeur is not None else 100.0, HUMEUR_GRAVE)
     if humeur is None or len((texte or "").split()) < MOTS_MIN_HUMEUR:
         return None
     return round(max(PLANCHER_MODELE, _borner(float(humeur))), 1)
@@ -101,7 +120,9 @@ def note_globale(notes: dict[str, float | None]) -> tuple[float, float]:
     confiance = sum(POIDS[c] for c in disponibles)
     if confiance <= 0:
         return 50.0, 0.0
-    note = sum(POIDS[c] * v for c, v in disponibles.items()) / confiance
+    moyenne = sum(POIDS[c] * v for c, v in disponibles.items()) / confiance
+    pire = min(disponibles.values())
+    note = (1 - PART_DU_PIRE) * moyenne + PART_DU_PIRE * pire
     return round(_borner(note), 1), round(confiance, 3)
 
 

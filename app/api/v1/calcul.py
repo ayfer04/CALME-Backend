@@ -11,6 +11,11 @@ from app.services.respiration import frequence_respiratoire
 from app.services.sudation import indicateurs_eda
 
 
+def _centile(valeurs: list[float], q: float) -> float:
+    ordonnees = sorted(valeurs)
+    return ordonnees[min(len(ordonnees) - 1, int(q * len(ordonnees)))]
+
+
 def mesures_de_la_seance(db: DbSession, session_id: int, depuis: datetime | None = None) -> dict:
     """Les indicateurs de la seance ; avec `depuis`, seulement ce qui a ete
     mesure a partir de cet instant (la periode d'exercice, a la cloture)."""
@@ -54,7 +59,9 @@ def mesures_de_la_seance(db: DbSession, session_id: int, depuis: datetime | None
         # Moyennes des indices calcules dans le navigateur (visage, une fois par
         # seconde) et sur le serveur (voix, par reponse enregistree).
         "voix": mean(voix) if voix else None,
-        "visage": mean(tensions) if tensions else None,
+        # Les moments les plus tendus (80e centile), pas la moyenne : quelques
+        # secondes de visage contrarie etaient noyees dans une minute neutre.
+        "visage": _centile(tensions, 0.8) if tensions else None,
         "sourire": mean(sourires) if sourires else None,
         # La moyenne de la conversation ; mais une seule phrase de detresse
         # l'emporte : une moyenne la noierait.

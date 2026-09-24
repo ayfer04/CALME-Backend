@@ -150,7 +150,8 @@ def test_le_visage_et_la_voix_comptent_dans_la_mesure(client, db_session):
         assert r.status_code == 202
 
     mesures = mesures_de_la_seance(db_session, session.id)
-    assert abs(mesures["visage"] - 0.5) < 1e-9
+    # Les moments les plus tendus (80e centile), pas la moyenne.
+    assert abs(mesures["visage"] - 0.6) < 1e-9
 
 
 def test_lassessment_a_la_forme_attendue_par_le_front():

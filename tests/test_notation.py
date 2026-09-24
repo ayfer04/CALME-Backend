@@ -17,8 +17,20 @@ def test_voix_posee_note_haut_tendue_ou_eteinte_plus_bas():
 def test_note_globale_ponderee_sur_ce_qui_existe():
     note, confiance = notation.note_globale({"visage": 90.0, "voix": None, "parole": None})
     assert note == 90.0 and abs(confiance - 0.30) < 1e-9
+    # Moyenne ponderee 50, pire note 20 : a mi-chemin, 35. Un visage et une
+    # voix corrects ne rattrapent plus une humeur au plus bas.
     note, confiance = notation.note_globale({"visage": 80.0, "voix": 80.0, "parole": 20.0})
-    assert note == 53.0 and confiance == 1.0
+    assert note == 35.0 and confiance == 1.0
+
+
+def test_une_souffrance_grave_passe_au_rouge():
+    """Le cas vecu : "toute ma famille est morte", visage lu comme neutre."""
+    humeur = notation.humeur_securisee(40, "toute ma famille est morte")
+    assert humeur == 15.0
+    note, confiance = notation.note_globale({"visage": 98.0, "voix": 72.0, "parole": humeur})
+    assert notation.niveau(note, confiance, humeur) == "red"
+    assert notation.detresse_exprimee("je suis désespéré")
+    assert not notation.detresse_exprimee("une journée normale au labo")
 
 
 def test_niveaux_et_couleurs():
