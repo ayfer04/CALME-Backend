@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.deps import get_db
 from app.models.tables import Decision, Indicateur, Session as SessionModel
-from app.services.indice import POIDS, ecart_z, indice_charge, niveau_depuis
+from app.services.exercices import signal_dominant
+from app.services.indice import INVERSES, POIDS, ecart_z, indice_charge, niveau_depuis
 from app.ws.hub import hub
 
 router = APIRouter()
@@ -131,6 +132,8 @@ def construire_assessment(session_id: int, mesures: dict, baseline: dict,
         "missingSignals": signaux_manquants(mesures),
         "indicators": indicateurs_bruts,
         "personalBaseline": round(baseline["hrv_rmssd"][0], 1) if "hrv_rmssd" in baseline else None,
+        # Ce que la mesure a vu d'abord : oriente le choix de l'exercice.
+        "dominantSignal": signal_dominant(zs, INVERSES),
         "computedAt": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -158,7 +161,7 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
     evaluation = construire_assessment(session_id, mesures, baseline, facteur, indicateurs_bruts)
     await hub.diffuser(session_id, {"type": "assessment", "payload": evaluation})
 
-    autorises = exercices_autorises(evaluation["level"])
+    autorises = exercices_autorises(evaluation["level"], evaluation["dominantSignal"])
     exercice, message, source, modele = rediger(evaluation, autorises, historique=[])
     if exercice is not None:
         recommandation = {
@@ -196,6 +199,7 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
         confiance=evaluation["confidence"],
         assessment_id=evaluation["id"],
         exercice_id=exercice["id"] if exercice else None,
+        signal_dominant=evaluation["dominantSignal"],
     ))
 
     # Cliche "avant" des indicateurs bruts, pour que POST /sessions/{id}/close

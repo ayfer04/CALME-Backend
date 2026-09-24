@@ -35,10 +35,11 @@ def _decision_par_assessment(db: DbSession, assessment_id: str) -> Decision:
 def recommander(assessment_id: str, db: DbSession = Depends(get_db)):
     decision = _decision_par_assessment(db, assessment_id)
 
-    autorises = exercices_autorises(decision.niveau)
-    # rediger() ne lit que index/level de l'evaluation dans son prompt : pas
-    # besoin de reconstruire l'objet Assessment complet pour l'appeler.
-    evaluation = {"index": decision.indice_charge, "level": decision.niveau}
+    autorises = exercices_autorises(decision.niveau, decision.signal_dominant)
+    # rediger() ne lit que index/level/signal dominant de l'evaluation dans son
+    # prompt : pas besoin de reconstruire l'objet Assessment complet.
+    evaluation = {"index": decision.indice_charge, "level": decision.niveau,
+                  "dominantSignal": decision.signal_dominant}
     exercice, message, source, modele = rediger(evaluation, autorises, historique=[])
 
     # On ecrase la redaction precedente : rejouer cette route, c'est

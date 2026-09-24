@@ -96,6 +96,10 @@ class Decision(Base):
     # Le retour de l'astronaute sur la consigne ('helped' / 'not-really').
     # Nulle tant que POST /recommendations/{id}/feedback n'a pas ete appele.
     feedback: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Le signal qui a oriente le choix de l'exercice (voir
+    # app/services/exercices.py::signal_dominant), pour que POST /recommend
+    # rejoue le meme choix sans recalculer la mesure.
+    signal_dominant: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class ConsentementCabine(Base):

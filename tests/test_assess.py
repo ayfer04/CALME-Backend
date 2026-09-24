@@ -200,3 +200,30 @@ def test_assess_niveau_unreliable_pousse_un_notice_jamais_une_recommandation_a_n
     reco = client.post(f"/api/v1/assessments/{evaluation['id']}/recommend")
     assert reco.status_code == 200
     assert reco.json() is None
+
+
+def test_lassessment_nomme_le_signal_dominant():
+    """Sudation en pics tres au-dessus de l'habitude : c'est elle qui doit
+    orienter le choix de l'exercice, pas la frequence cardiaque normale."""
+    a = construire_assessment(
+        session_id=1,
+        mesures={"hrv_rmssd": GENERIQUE["hrv_rmssd"][0], "eda_reponses": 30.0,
+                 "fc_moyenne": GENERIQUE["fc_moyenne"][0], "eda_fond": None,
+                 "voix": None, "visage": None},
+        baseline=GENERIQUE,
+        facteur_confiance=1.0,
+        indicateurs_bruts={},
+    )
+    assert a["dominantSignal"] == "eda_reponses"
+
+
+def test_la_decision_retient_le_signal_dominant(client, db_session):
+    from app.models.tables import Decision
+
+    astro = _astronaute(db_session)
+    session = _session_ouverte(db_session, astro)
+    _ajouter_mesure_cardiaque(db_session, session)
+
+    corps = client.post(f"/api/v1/sessions/{session.id}/assess").json()
+    decision = db_session.query(Decision).filter_by(assessment_id=corps["id"]).one()
+    assert decision.signal_dominant == corps["dominantSignal"]

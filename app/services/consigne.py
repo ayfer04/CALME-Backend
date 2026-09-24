@@ -14,6 +14,8 @@ import os
 
 import httpx
 
+from app.services.exercices import LIBELLES_SIGNAUX
+
 MODELE = os.environ.get("MODELE_OLLAMA", "llama3.2:3b")
 # Palier intermediaire de la chaine de repli : un modele plus petit, tente
 # une seule fois si le modele nominal echoue ou repond hors-liste, avant de
@@ -43,6 +45,12 @@ CONSIGNES_GENERIQUES: dict[str, str] = {
     "circadien": "Quinze minutes de lumiere descendante, calee sur l'heure de bord.",
     "sieste": "Vingt minutes. Fermez les yeux, la cabine vous reveillera.",
     "journal": "Huit minutes. Racontez votre journee a voix haute. Personne ne l'ecoutera.",
+    "soupir": "Deux minutes. Deux inspirations par le nez, puis une longue expiration par la bouche.",
+    "visage": "Trois minutes. Contractez puis relachez le front, les yeux et la machoire.",
+    "jacobson": "Huit minutes. Contractez chaque partie du corps cinq secondes, puis relachez.",
+    "scan": "Sept minutes. Laissez votre attention parcourir le corps, des pieds a la tete.",
+    "recul": "Cinq minutes. Trois questions pour remettre la journee a sa juste place.",
+    "visualisation": "Six minutes. Laissez-vous guider jusqu'au hublot, face a la Terre.",
 }
 
 MESSAGE_MAINTENANCE = (
@@ -68,6 +76,12 @@ def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[
         client = ollama.Client(host=HOTE_OLLAMA, timeout=delai)
         liste = "\n".join(f"- {e['id']} : {e['name']} ({e['duration']} min, {e['indication']})"
                           for e in autorises)
+        dominant = evaluation.get("dominantSignal")
+        # La liste arrive deja triee (les plus adaptes au signal dominant
+        # d'abord) : le modele sait pourquoi, et peut s'y tenir.
+        oriente = (f"\nCe que la mesure a vu d'abord : {LIBELLES_SIGNAUX[dominant]}. "
+                   f"Les premiers exercices de la liste y repondent le mieux."
+                   if dominant in LIBELLES_SIGNAUX else "")
         schema = {
             "type": "object",
             "properties": {
@@ -82,7 +96,7 @@ def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[
                 {"role": "system", "content": SYSTEME},
                 {"role": "user", "content":
                     f"Indice de charge : {evaluation['index']} sur 100, palier "
-                    f"{evaluation['level']}.\nExercices disponibles :\n{liste}"},
+                    f"{evaluation['level']}.{oriente}\nExercices disponibles :\n{liste}"},
             ],
             format=schema,   # contrainte appliquee au decodage, pas verifiee apres coup
         )
