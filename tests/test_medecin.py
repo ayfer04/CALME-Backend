@@ -96,6 +96,8 @@ def test_capteurs_visage_et_voix_affichent_leurs_valeurs(client, db_session):
                               ts=datetime.now(timezone.utc), valeurs={"tension": t}, qualite={}))
     db_session.commit()
     capteurs = {c["key"]: c for c in client.get("/api/v1/cabins/cabine-01/sensors").json()}
-    assert capteurs["face"]["value"] == 0.4
-    assert capteurs["face"]["window"] == [0.3, 0.4]
+    # Notes sur 100 (100 = visage detendu) : tension 0,3 puis 0,4.
+    assert capteurs["face"]["window"] == [51.0, 31.0]
+    assert capteurs["face"]["value"] == 31.0
+    assert capteurs["face"]["unit"] == "/100"
     assert capteurs["voice"]["value"] is None

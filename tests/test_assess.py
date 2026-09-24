@@ -30,27 +30,6 @@ def test_au_dela_de_dix_seances_la_baseline_est_personnelle():
     assert ecart_type > 0
 
 
-def test_lassessment_a_la_forme_attendue_par_le_front():
-    a = construire_assessment(
-        session_id=1,
-        mesures={"hrv_rmssd": 30.0, "eda_reponses": 6.0, "fc_moyenne": 78.0,
-                 "eda_fond": 7.0, "voix": None, "visage": None},
-        baseline=GENERIQUE,
-        facteur_confiance=1.0,
-        indicateurs_bruts={"heartRateMean": 78.0, "heartRateVariability": 30.0,
-                           "edaTonic": 7.0, "edaPhasic": 6.0,
-                           "faceTension": None, "voiceIndex": None,
-                           "breathingRate": 14.0},
-    )
-    assert set(a) >= {"id", "sessionId", "index", "level", "confidence",
-                      "missingSignals", "indicators", "personalBaseline", "computedAt"}
-    assert a["level"] in {"green", "amber", "red", "unreliable"}
-    # Voix et visage absents : leurs poids sont retires, 1 - 0,15 - 0,10 = 0,75
-    assert abs(a["confidence"] - 0.75) < 1e-9
-    signaux = {m["signal"] for m in a["missingSignals"]}
-    assert signaux == {"voice", "face"}
-
-
 # ---------------------------------------------------------------------------
 # Tests de la route POST /sessions/{id}/assess : la baseline personnelle doit
 # s'activer depuis l'historique reel de l'astronaute, pas depuis une liste
@@ -108,60 +87,6 @@ def _historique_de_douze_seances(db_session, astronaute):
     db_session.commit()
 
 
-def test_assess_sans_historique_la_confiance_porte_le_facteur_generique(client, db_session):
-    astro = _astronaute(db_session)
-    session = _session_ouverte(db_session, astro)
-    _ajouter_mesure_cardiaque(db_session, session)
-
-    reponse = client.post(f"/api/v1/sessions/{session.id}/assess")
-    assert reponse.status_code == 200
-    corps = reponse.json()
-
-    # Seuls hrv_rmssd (0,30) et fc_moyenne (0,10) sont disponibles : la
-    # confiance de base est 0,40, multipliee par le facteur generique 0,6.
-    assert abs(corps["confidence"] - 0.24) < 0.01
-    # Aucun historique : la baseline reste la generique (42.0), jamais 42.0
-    # invente pour une autre raison — ici c'est bien la valeur de repli.
-    assert corps["personalBaseline"] == 42.0
-
-
-def test_assess_avec_douze_seances_la_baseline_est_personnelle_et_la_confiance_pleine(
-    client, db_session
-):
-    astro = _astronaute(db_session)
-    _historique_de_douze_seances(db_session, astro)
-    session = _session_ouverte(db_session, astro)
-    _ajouter_mesure_cardiaque(db_session, session)
-
-    reponse = client.post(f"/api/v1/sessions/{session.id}/assess")
-    assert reponse.status_code == 200
-    corps = reponse.json()
-
-    # Douze seances passees (>= SEANCES_POUR_BASELINE) : facteur 1.0, donc la
-    # confiance de base (0,40) n'est plus rabotee.
-    assert abs(corps["confidence"] - 0.40) < 0.01
-    # La baseline vient des 12 seances precedentes (moyenne 55.5), pas de la
-    # constante generique 42.0.
-    assert corps["personalBaseline"] == 55.5
-
-
-def test_assess_dune_autre_seance_du_meme_astronaute_nest_jamais_dans_son_propre_historique(
-    client, db_session
-):
-    """Rejouer /assess sur la seance en cours ne doit jamais faire grossir son
-    propre historique : sinon on finirait par comparer l'astronaute a
-    lui-meme quelques secondes plus tot.
-    """
-    astro = _astronaute(db_session)
-    session = _session_ouverte(db_session, astro)
-    _ajouter_mesure_cardiaque(db_session, session)
-
-    premiere = client.post(f"/api/v1/sessions/{session.id}/assess").json()
-    seconde = client.post(f"/api/v1/sessions/{session.id}/assess").json()
-
-    assert premiere["personalBaseline"] == seconde["personalBaseline"] == 42.0
-
-
 # ---------------------------------------------------------------------------
 # Palier 'unreliable' : rediger() renvoie exercice=None, et ni l'evenement
 # WebSocket ni la reponse HTTP ne doivent alors prétendre a une recommandation
@@ -198,21 +123,6 @@ def test_assess_mesure_incomplete_propose_quand_meme_un_exercice_doux(
     assert reco.json()["exercise"]["minLevel"] == "green"
 
 
-def test_lassessment_nomme_le_signal_dominant():
-    """Sudation en pics tres au-dessus de l'habitude : c'est elle qui doit
-    orienter le choix de l'exercice, pas la frequence cardiaque normale."""
-    a = construire_assessment(
-        session_id=1,
-        mesures={"hrv_rmssd": GENERIQUE["hrv_rmssd"][0], "eda_reponses": 30.0,
-                 "fc_moyenne": GENERIQUE["fc_moyenne"][0], "eda_fond": None,
-                 "voix": None, "visage": None},
-        baseline=GENERIQUE,
-        facteur_confiance=1.0,
-        indicateurs_bruts={},
-    )
-    assert a["dominantSignal"] == "eda_reponses"
-
-
 def test_la_decision_retient_le_signal_dominant(client, db_session):
     from app.models.tables import Decision
 
@@ -241,3 +151,27 @@ def test_le_visage_et_la_voix_comptent_dans_la_mesure(client, db_session):
 
     mesures = mesures_de_la_seance(db_session, session.id)
     assert abs(mesures["visage"] - 0.5) < 1e-9
+
+
+def test_lassessment_a_la_forme_attendue_par_le_front():
+    """Note de bien-etre sur 100 : visage detendu, voix posee, humeur bonne."""
+    a = construire_assessment(session_id=1, mesures={"visage": 0.1, "voix": 0.5, "parole": 80.0})
+    assert set(a) >= {"id", "sessionId", "index", "level", "confidence", "missingSignals",
+                      "indicators", "scores", "verdict", "dominantSignal", "computedAt"}
+    assert a["level"] == "green"
+    assert a["index"] >= 80
+    assert a["verdict"].startswith("Tout va bien")
+    assert abs(a["confidence"] - 1.0) < 1e-9
+    assert a["missingSignals"] == []
+
+
+def test_lassessment_nomme_la_note_la_plus_basse():
+    a = construire_assessment(session_id=1, mesures={"visage": 0.45, "voix": 0.5, "parole": 70.0})
+    assert a["scores"]["face"] < 60
+    assert a["dominantSignal"] == "visage"
+
+
+def test_sans_camera_ni_micro_on_ne_conclut_rien():
+    a = construire_assessment(session_id=1, mesures={})
+    assert a["level"] == "unreliable"
+    assert {m["signal"] for m in a["missingSignals"]} == {"face", "voice"}

@@ -182,7 +182,7 @@ def clore_session(session_id: int, db: DbSession = Depends(get_db)):
     # (sudation, visage...) : le coeur n'est plus exige.
     index_apres = None
     niveau_apres = None
-    signaux = ("fc_moyenne", "hrv_rmssd", "eda_fond", "eda_reponses", "visage", "voix")
+    signaux = ("visage", "voix", "parole")
     if any(mesures_cloture.get(cle) is not None for cle in signaux):
         historique = historique_indicateurs(db, session.astronaute_id, session_id)
         baseline, facteur = baseline_ou_generique(historique, BASELINE_GENERIQUE)

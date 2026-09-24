@@ -158,22 +158,51 @@ def _messages(historique: list[dict], entendu: str, dernier_tour: bool) -> list[
     return messages
 
 
-def repondre(historique: list[dict], entendu: str, dernier_tour: bool) -> tuple[str, str]:
-    """Renvoie (relance, source), source valant "model" ou "rules"."""
+SCHEMA_REPONSE = {
+    "type": "object",
+    "properties": {
+        "reponse": {"type": "string"},
+        "humeur": {"type": "integer", "minimum": 0, "maximum": 100},
+    },
+    "required": ["reponse", "humeur"],
+}
+
+CONSIGNE_HUMEUR = (
+    ' Reponds en JSON : {"reponse": ta phrase pour lui, "humeur": une note de 0 '
+    "a 100 de l'etat emotionnel exprime par l'astronaute dans ses mots (100 : "
+    "tres bien, content ; 50 : neutre ; 20 : triste, angoisse ; 0 : detresse "
+    'grave, idees suicidaires)}.'
+)
+
+
+def repondre(historique: list[dict], entendu: str,
+             dernier_tour: bool) -> tuple[str, str, float | None]:
+    """Renvoie (relance, source, humeur). Source "model" ou "rules" ; humeur
+    sur 100, ou None si rien n'a ete dit ou si le modele n'a pas repondu."""
+    from app.services.notation import humeur_securisee
+
     if not entendu:
-        return (CLOTURE_SANS_MODELE if dernier_tour else RELANCE_SILENCE), "rules"
+        return (CLOTURE_SANS_MODELE if dernier_tour else RELANCE_SILENCE), "rules", None
     try:
         import ollama
 
         client = ollama.Client(host=HOTE_OLLAMA,
                                timeout=httpx.Timeout(DELAI_REPONSE_S, connect=DELAI_CONNEXION_S))
-        reponse = client.chat(model=MODELE, messages=_messages(historique, entendu, dernier_tour),
-                              options={"num_predict": 70, "temperature": 0.6})
-        texte = " ".join(reponse["message"]["content"].split())
+        messages = _messages(historique, entendu, dernier_tour)
+        messages[0] = {"role": "system", "content": SYSTEME + CONSIGNE_HUMEUR}
+        reponse = client.chat(model=MODELE, messages=messages, format=SCHEMA_REPONSE,
+                              options={"num_predict": 110, "temperature": 0.6})
+        import json
+
+        contenu = json.loads(reponse["message"]["content"])
+        texte = " ".join(str(contenu.get("reponse", "")).split())
         if texte:
-            return texte, "model"
+            return texte, "model", humeur_securisee(contenu.get("humeur"), entendu)
     except Exception:
         pass
+    # Sans modele, pas de note d'humeur - sauf le filet de securite sur les
+    # mots de detresse, qui ne depend pas de lui.
+    humeur = humeur_securisee(None, entendu)
     if dernier_tour:
-        return CLOTURE_SANS_MODELE, "rules"
-    return random.choice(RELANCES_SANS_MODELE), "rules"
+        return CLOTURE_SANS_MODELE, "rules", humeur
+    return random.choice(RELANCES_SANS_MODELE), "rules", humeur

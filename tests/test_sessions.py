@@ -217,8 +217,8 @@ def test_la_note_de_fin_se_calcule_sur_lexercice_meme_sans_coeur(client, db_sess
     corps = client.post(f"/api/v1/sessions/{session.id}/close").json()
     assert corps["indexBefore"] == 62.0
     assert corps["indexAfter"] is not None
-    # Visage detendu (0,2 pour une normale a 0,5) : l'indice passe sous 30.
-    assert corps["indexAfter"] < 30.0
+    # Visage detendu (tension 0,2) : note de bien-etre de fin au vert.
+    assert corps["indexAfter"] >= 60.0
 
 
 def test_une_nouvelle_seance_repart_micro_et_camera_actifs(client, db_session):

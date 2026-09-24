@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.deps import get_db
 from app.models.tables import Decision, Indicateur, Mesure, Session as SessionModel
-from app.services.exercices import signal_dominant
+from app.services import notation
 from app.services.indice import INVERSES, POIDS, ecart_z, indice_charge, niveau_depuis
 from app.ws.hub import hub
 
@@ -110,30 +110,30 @@ def signaux_manquants(mesures: dict) -> list[dict]:
     return uniques
 
 
-def construire_assessment(session_id: int, mesures: dict, baseline: dict,
-                          facteur_confiance: float, indicateurs_bruts: dict) -> dict:
-    zs = {}
-    for cle in POIDS:
-        valeur = mesures.get(cle)
-        if valeur is None:
-            continue
-        moyenne, ecart_type = baseline[cle]
-        zs[cle] = ecart_z(valeur, moyenne, ecart_type)
-
-    indice, confiance = indice_charge(zs)
-    confiance *= facteur_confiance
-
+def construire_assessment(session_id: int, mesures: dict, baseline: dict | None = None,
+                          facteur_confiance: float = 1.0, indicateurs_bruts: dict | None = None) -> dict:
+    """La note de bien-etre sur 100 (voir app/services/notation.py). `baseline`
+    et `facteur_confiance` servaient a l'ancien indice de charge (capteurs de
+    l'Arduino, abandonnes) : gardes dans la signature, sans effet."""
+    notes = notation.notes_de(mesures)
+    note, confiance = notation.note_globale(notes)
+    niveau = notation.niveau(note, confiance, notes.get("parole"))
+    manquants = [{"signal": cle, "reason": "faulty"}
+                 for cle, champ in (("face", "visage"), ("voice", "voix")) if notes[champ] is None]
     return {
         "id": str(uuid4()),
         "sessionId": str(session_id),
-        "index": round(indice, 1),
-        "level": niveau_depuis(indice, confiance),
-        "confidence": round(confiance, 3),
-        "missingSignals": signaux_manquants(mesures),
-        "indicators": indicateurs_bruts,
-        "personalBaseline": round(baseline["hrv_rmssd"][0], 1) if "hrv_rmssd" in baseline else None,
-        # Ce que la mesure a vu d'abord : oriente le choix de l'exercice.
-        "dominantSignal": signal_dominant(zs, INVERSES),
+        "index": note,
+        "level": niveau,
+        "confidence": confiance,
+        "missingSignals": manquants,
+        "indicators": indicateurs_bruts or {},
+        "personalBaseline": None,
+        # Les trois notes sur 100, et la phrase qui annonce le resultat.
+        "scores": {"face": notes["visage"], "voice": notes["voix"], "mood": notes["parole"]},
+        "verdict": notation.verdict(note, niveau),
+        # La note la plus basse oriente le choix de l'exercice.
+        "dominantSignal": notation.signal_dominant(notes),
         "computedAt": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -225,6 +225,9 @@ async def assess(session_id: int, db: DbSession = Depends(get_db)):
 class IndiceFacial(BaseModel):
     at: str
     tension: float = Field(ge=0, le=1)
+    # Sourire moyen (MediaPipe) : il releve la note du visage. Optionnel pour
+    # les fronts deja deployes qui ne l'envoient pas encore.
+    smile: float | None = Field(default=None, ge=0, le=1)
     blinkRate: float = Field(ge=0)
     stillness: float = Field(ge=0, le=1)
 
@@ -248,12 +251,13 @@ async def recevoir_indice_facial(session_id: int, corps: IndiceFacial,
     L'analyse a lieu dans le navigateur de la cabine : la promesse du dossier
     est donc vraie architecturalement, et pas seulement sur parole.
     """
-    _garder(db, session_id, "visage", {"tension": corps.tension, "blinkRate": corps.blinkRate,
-                                        "stillness": corps.stillness})
+    _garder(db, session_id, "visage", {"tension": corps.tension, "sourire": corps.smile,
+                                        "blinkRate": corps.blinkRate, "stillness": corps.stillness})
     await hub.diffuser(session_id, {
         "type": "frame",
         "payload": {"at": corps.at, "heartRate": None, "skinConductance": None,
-                    "faceTension": corps.tension, "voiceIndex": None, "suspect": []},
+                    "faceTension": corps.tension, "voiceIndex": None, "suspect": [],
+                    "faceScore": notation.note_visage(corps.tension, corps.smile)},
     })
     return {"recu": True}
 
@@ -279,6 +283,7 @@ async def recevoir_audio(session_id: int, fichier: UploadFile = File(...),
     await hub.diffuser(session_id, {
         "type": "frame",
         "payload": {"at": None, "heartRate": None, "skinConductance": None,
-                    "faceTension": None, "voiceIndex": indice, "suspect": []},
+                    "faceTension": None, "voiceIndex": indice, "suspect": [],
+                    "voiceScore": notation.note_voix(indice)},
     })
     return {"voiceIndex": round(indice, 3), **{k: round(v, 3) for k, v in features.items()}}

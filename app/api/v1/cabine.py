@@ -22,7 +22,7 @@ from app.deps import get_db
 from app.models.tables import Astronaute, Mesure
 from app.models.tables import Session as SessionModel
 from app.schemas.crew import EnrolementCorps, IdentificationCorps, RemplacementEmpreinteCorps
-from app.services import consentement, visage
+from app.services import consentement, notation, visage
 
 router = APIRouter()
 
@@ -38,8 +38,8 @@ FC_MIN, FC_MAX = 30, 220
 GABARIT_CAPTEURS = {
     "hr": {"label": "Cardiaque", "model": "MAX30102", "sampleRate": "100 Hz", "unit": "bpm"},
     "eda": {"label": "Sudation", "model": "Grove GSR", "sampleRate": "10 Hz", "unit": "µS"},
-    "face": {"label": "Visage", "model": "Logitech C270", "sampleRate": "5 im/s", "unit": ""},
-    "voice": {"label": "Voix", "model": "Logitech C270", "sampleRate": "16 kHz", "unit": ""},
+    "face": {"label": "Visage", "model": "DJI Osmo Action 4", "sampleRate": "10 im/s", "unit": "/100"},
+    "voice": {"label": "Voix", "model": "DJI Osmo Action 4", "sampleRate": "16 kHz", "unit": "/100"},
 }
 
 
@@ -149,6 +149,7 @@ def capteurs(cabin_id: str, db: DbSession = Depends(get_db)):
     # Visage et voix : leurs indices sont desormais ranges avec les autres
     # mesures (voir POST /sessions/{id}/face et /audio). Des nombres, jamais
     # une image ni un son.
+    # Affiches comme des notes sur 100 (100 = le mieux), comme a l'ecran de la cabine.
     for cle, capteur, champ, raison_coupure in (("face", "visage", "tension", "camera"),
                                                  ("voice", "voix", "indice", "microphone")):
         actif = getattr(consent, raison_coupure)
@@ -157,8 +158,11 @@ def capteurs(cabin_id: str, db: DbSession = Depends(get_db)):
             lignes = (db.query(Mesure)
                       .filter(Mesure.session_id == derniere_session.id, Mesure.capteur == capteur)
                       .order_by(Mesure.ts.desc()).limit(30).all())
-            serie = [round(float(l.valeurs[champ]), 3) for l in reversed(lignes)
-                     if l.valeurs.get(champ) is not None]
+            serie = [
+                notation.note_visage(float(l.valeurs[champ]), l.valeurs.get("sourire"))
+                if capteur == "visage" else notation.note_voix(float(l.valeurs[champ]))
+                for l in reversed(lignes) if l.valeurs.get(champ) is not None
+            ]
         resultat.append({
             "key": cle,
             **GABARIT_CAPTEURS[cle],

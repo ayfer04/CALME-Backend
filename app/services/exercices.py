@@ -56,11 +56,11 @@ CATALOGUE: list[dict] = [
     {"id": "ancrage5432", "name": "Ancrage sensoriel 5-4-3-2-1", "duration": 5,
      "indication": "Rumination, pensées qui tournent en boucle",
      "minLevel": "amber", "kind": "grounding", "music": None,
-     "signals": ["eda_reponses", "voix"]},
+     "signals": ["eda_reponses", "voix", "parole"]},
     {"id": "recul", "name": "Prendre du recul", "duration": 5,
      "indication": "Voix tendue après une journée difficile",
      "minLevel": "green", "kind": "reflection", "music": None,
-     "signals": ["voix", "eda_reponses"]},
+     "signals": ["parole", "voix", "eda_reponses"]},
     {"id": "visualisation", "name": "La Terre vue du hublot", "duration": 6,
      "indication": "Lassitude, voix éteinte, besoin d'évasion",
      "minLevel": "green", "kind": "relaxation", "music": PISTE_RELAXATION,
@@ -80,7 +80,7 @@ CATALOGUE: list[dict] = [
     {"id": "journal", "name": "Journal vocal différé", "duration": 8,
      "indication": "Repli, isolement social",
      "minLevel": "green", "kind": "journal", "music": None,
-     "signals": ["voix", "fatigue"]},
+     "signals": ["voix", "parole", "fatigue"]},
 ]
 
 # Ce que chaque signal veut dire, pour le prompt du modele et pour l'ecran.
@@ -90,7 +90,8 @@ LIBELLES_SIGNAUX = {
     "eda_reponses": "pics de sudation",
     "eda_fond": "sudation de fond élevée",
     "visage": "visage crispé",
-    "voix": "voix tendue",
+    "voix": "voix tendue ou éteinte",
+    "parole": "propos inquiets ou tristes pendant la conversation",
     "fatigue": "fatigue, activation basse",
     "diffus": "charge diffuse, aucun signal ne domine",
 }

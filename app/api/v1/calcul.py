@@ -22,7 +22,9 @@ def mesures_de_la_seance(db: DbSession, session_id: int, depuis: datetime | None
     ppg: list[int] = []
     eda: list[float] = []
     tensions: list[float] = []
+    sourires: list[float] = []
     voix: list[float] = []
+    humeurs: list[float] = []
     for ligne in lignes:
         if ligne.capteur == "ppg":
             ppg.extend(ligne.valeurs.get("ppg_raw", []))
@@ -30,6 +32,10 @@ def mesures_de_la_seance(db: DbSession, session_id: int, depuis: datetime | None
             eda.extend(ligne.valeurs.get("eda_us", []))
         elif ligne.capteur == "visage" and ligne.valeurs.get("tension") is not None:
             tensions.append(float(ligne.valeurs["tension"]))
+            if ligne.valeurs.get("sourire") is not None:
+                sourires.append(float(ligne.valeurs["sourire"]))
+        elif ligne.capteur == "parole" and ligne.valeurs.get("humeur") is not None:
+            humeurs.append(float(ligne.valeurs["humeur"]))
         elif ligne.capteur == "voix" and ligne.valeurs.get("indice") is not None:
             voix.append(float(ligne.valeurs["indice"]))
 
@@ -46,6 +52,10 @@ def mesures_de_la_seance(db: DbSession, session_id: int, depuis: datetime | None
         # seconde) et sur le serveur (voix, par reponse enregistree).
         "voix": mean(voix) if voix else None,
         "visage": mean(tensions) if tensions else None,
+        "sourire": mean(sourires) if sourires else None,
+        # L'humeur la plus basse de la conversation : une seule phrase de
+        # detresse suffit, une moyenne la noierait.
+        "parole": min(humeurs) if humeurs else None,
     }
 
 

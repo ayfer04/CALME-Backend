@@ -33,7 +33,8 @@ class FauxOllama:
         if self.echoue:
             raise ConnectionError("ollama coupe")
         self.messages = messages
-        return {"message": {"content": self.texte}}
+        import json
+        return {"message": {"content": json.dumps({"reponse": self.texte, "humeur": 40})}}
 
 
 @pytest.fixture()
@@ -89,7 +90,8 @@ def test_dernier_tour_sans_modele_cloture(client, monkeypatch):
 def test_silence_ne_derange_pas_le_modele(client, monkeypatch, faux_ollama):
     monkeypatch.setattr(dialogue, "transcrire", lambda octets: "")
     corps = _poster(client).json()
-    assert corps == {"entendu": "", "reponse": dialogue.RELANCE_SILENCE, "source": "rules"}
+    assert corps == {"entendu": "", "reponse": dialogue.RELANCE_SILENCE, "source": "rules",
+                     "humeur": None}
     assert faux_ollama.messages is None
 
 
@@ -131,3 +133,28 @@ def test_audio_illisible(monkeypatch):
 def test_reechantillonnage_vers_16k():
     audio = dialogue._audio_16k(_wav(secondes=1.0, taux=48_000))
     assert abs(len(audio) - 16_000) <= 1
+
+
+def test_lhumeur_est_notee_et_gardee_seule(client, monkeypatch, faux_ollama, db_session):
+    """La note d'humeur (sur 100) est rangee ; les mots, jamais."""
+    from app.models.tables import Astronaute, Mesure, Session as SessionModel
+    from datetime import datetime, timezone
+
+    a = Astronaute(nom="Test")
+    db_session.add(a)
+    db_session.flush()
+    s = SessionModel(astronaute_id=a.id, debut=datetime.now(timezone.utc), mode="measuring")
+    db_session.add(s)
+    db_session.commit()
+    monkeypatch.setattr(dialogue, "transcrire", lambda octets: "Journee difficile.")
+    corps = client.post(f"/api/v1/sessions/{s.id}/dialogue",
+                        files={"fichier": ("voix.wav", _wav(), "audio/wav")}).json()
+    assert corps["humeur"] == 40
+    lignes = db_session.query(Mesure).filter_by(session_id=s.id, capteur="parole").all()
+    assert [l.valeurs for l in lignes] == [{"humeur": 40}]
+
+
+def test_les_mots_de_detresse_font_tomber_lhumeur(client, monkeypatch, faux_ollama):
+    monkeypatch.setattr(dialogue, "transcrire", lambda octets: "J'ai plus envie de vivre.")
+    corps = _poster(client).json()
+    assert corps["humeur"] <= 5

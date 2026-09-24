@@ -78,8 +78,8 @@ def test_capteurs_renvoie_les_quatre_avec_les_vraies_references_de_composant(cli
     assert par_cle["hr"]["sampleRate"] == "100 Hz"
     assert par_cle["eda"]["model"] == "Grove GSR"
     assert par_cle["eda"]["sampleRate"] == "10 Hz"
-    assert par_cle["face"]["model"] == "Logitech C270"
-    assert par_cle["voice"]["model"] == "Logitech C270"
+    assert par_cle["face"]["model"] == "DJI Osmo Action 4"
+    assert par_cle["voice"]["model"] == "DJI Osmo Action 4"
 
 
 def test_capteurs_sans_aucune_seance_sont_tous_non_fiables_et_sans_valeur(client):

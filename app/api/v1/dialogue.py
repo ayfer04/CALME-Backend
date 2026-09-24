@@ -10,10 +10,16 @@ import json
 import os
 import threading
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session as DbSession
 from starlette.concurrency import run_in_threadpool
 
+from app.deps import get_db
+from app.models.tables import Mesure, Session as SessionModel
 from app.services import dialogue
+from app.ws.hub import hub
 
 router = APIRouter()
 
@@ -40,6 +46,7 @@ async def tour_de_dialogue(
     fichier: UploadFile = File(...),
     historique: str = Form("[]"),
     dernier_tour: bool = Form(False),
+    db: DbSession = Depends(get_db),
 ):
     tours = _historique(historique)
     octets = await fichier.read()
@@ -52,5 +59,14 @@ async def tour_de_dialogue(
     finally:
         del octets
 
-    reponse, source = await run_in_threadpool(dialogue.repondre, tours, entendu, dernier_tour)
-    return {"entendu": entendu, "reponse": reponse, "source": source}
+    reponse, source, humeur = await run_in_threadpool(dialogue.repondre, tours, entendu, dernier_tour)
+    if humeur is not None:
+        # Seule la note est gardee : ni les mots, ni le son.
+        if db.get(SessionModel, session_id) is not None:
+            db.add(Mesure(session_id=session_id, device_id="cabine-front", capteur="parole", seq=0,
+                          ts=datetime.now(timezone.utc), valeurs={"humeur": humeur}, qualite={}))
+            db.commit()
+        await hub.diffuser(session_id, {"type": "frame", "payload": {
+            "at": None, "heartRate": None, "skinConductance": None, "faceTension": None,
+            "voiceIndex": None, "suspect": [], "moodScore": humeur}})
+    return {"entendu": entendu, "reponse": reponse, "source": source, "humeur": humeur}

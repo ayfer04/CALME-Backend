@@ -19,13 +19,15 @@ from app.deps import get_db
 from app.models.tables import Astronaute, Decision, Indicateur, Mesure
 from app.models.tables import Session as SessionModel
 from app.services.exercices import CATALOGUE
-from app.services.indice import niveau_depuis
+from app.services import notation
 
 router = APIRouter()
 
 # Le jour de bord : le sol courant de la mission, recale sur la date du jour.
 SOL_AUJOURDHUI = 4212
-INDICE_NEUTRE = 30.0
+# Note de bien-etre neutre (echelle sur 100, 100 = le mieux), pour les jours
+# sans seance.
+INDICE_NEUTRE = 50.0
 NOMS_EXERCICES = {e["id"]: e["name"] for e in CATALOGUE}
 
 
@@ -76,7 +78,7 @@ def vue_equipage(db: DbSession = Depends(get_db)):
         resultat.append({
             "member": _crew_member(astronaute),
             "meanIndex": moyenne,
-            "level": niveau_depuis(moyenne, 1.0),
+            "level": notation.niveau(moyenne, 1.0),
             "delta": round(spark[-1] - spark[0], 1),
             "lastSessionAt": derniere.debut.isoformat() if derniere else None,
             "spark": spark,
