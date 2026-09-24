@@ -1,0 +1,14 @@
+[Unit]
+Description=Passerelle capteurs C.A.L.M.E. (Arduino serie -> API de la tour)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=calme
+EnvironmentFile=/etc/calme/passerelle.env
+ExecStart=/usr/bin/python3 /opt/calme/passerelle.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
