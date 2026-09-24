@@ -9,6 +9,7 @@ dnspython==2.8.0
 email-validator==2.3.0
 fastapi==0.141.1
 fastapi-cli==0.0.32
+flatbuffers==25.12.19
 greenlet==3.5.6
 h11==0.16.0
 httpcore==1.0.9
@@ -24,6 +25,7 @@ mdurl==0.1.2
 neurokit2==0.2.13
 numpy==2.5.3
 ollama==0.6.2
+onnxruntime==1.30.0
 # opensmile n'a pas une seule version qui convienne aux deux plateformes :
 # 2.6.0 est la seule a fournir une bibliotheque arm64 (necessaire pour
 # demarrer en developpement sur ce Mac Apple Silicon) ; 2.4.2 est la
@@ -34,7 +36,16 @@ ollama==0.6.2
 opensmile==2.6.0 ; sys_platform == "darwin"
 opensmile==2.4.2 ; sys_platform != "darwin"
 packaging==26.3
+pathvalidate==3.3.1
+# Synthese vocale de la cabine (voir app/services/synthese.py). Le depot
+# Rhasspy d'origine est archive depuis octobre 2025 ; OHF-Voice/piper1-gpl en
+# est le successeur maintenu, publie sur PyPI sous le meme nom de paquet.
+# Verifie sur cette machine (macOS arm64, Python 3.14) et sur les cibles de
+# deploiement (manylinux x86_64 et aarch64, Python 3.13) : une seule version
+# convient partout, pas de marqueur de plateforme necessaire ici.
+piper-tts==1.8.0
 pluggy==1.6.0
+protobuf==7.36.2
 psycopg==3.3.6
 psycopg-binary==3.3.6
 pydantic==2.13.5
