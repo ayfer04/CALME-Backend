@@ -26,20 +26,13 @@ from app.services import consentement, notation, visage
 
 router = APIRouter()
 
-# Bornes physiologiques plausibles du capteur cardiaque (voir
-# app/services/cardiaque.py, IBI_MIN_MS/IBI_MAX_MS : 30 a 220 bpm). Un
-# resultat hors de ces bornes n'est pas une urgence medicale, c'est un
-# capteur qui deconne - exactement l'esprit du champ `note`.
-FC_MIN, FC_MAX = 30, 220
-
-# Modele et cadence sont ceux graves sur le composant reellement cable dans
-# la cabine, pas des valeurs de demonstration : voir tache-19-brief.md.
-# La camera et le micro partagent le meme boitier USB (Logitech C270).
+# Modele et cadence sont ceux du materiel reellement branche sur la tour.
+# La camera et le micro partagent le meme boitier USB (DJI Osmo Action 4) ;
+# les capteurs de l'Arduino (coeur, sudation) sont abandonnes.
 GABARIT_CAPTEURS = {
-    "hr": {"label": "Cardiaque", "model": "MAX30102", "sampleRate": "100 Hz", "unit": "bpm"},
-    "eda": {"label": "Sudation", "model": "Grove GSR", "sampleRate": "10 Hz", "unit": "µS"},
     "face": {"label": "Visage", "model": "DJI Osmo Action 4", "sampleRate": "10 im/s", "unit": "/100"},
     "voice": {"label": "Voix", "model": "DJI Osmo Action 4", "sampleRate": "16 kHz", "unit": "/100"},
+    "mood": {"label": "Humeur", "model": "Whisper + llama3.2:3b", "sampleRate": "par réponse", "unit": "/100"},
 }
 
 
@@ -108,50 +101,10 @@ def capteurs(cabin_id: str, db: DbSession = Depends(get_db)):
 
     resultat = []
 
-    valeur_hr = mesures.get("fc_moyenne")
-    if valeur_hr is None:
-        niveau_hr, note_hr = "unreliable", "Aucune mesure recue"
-    elif not (FC_MIN <= valeur_hr <= FC_MAX):
-        niveau_hr, note_hr = "red", f"Hors bornes {FC_MIN}-{FC_MAX} bpm, mesure suspecte"
-    else:
-        niveau_hr, note_hr = "green", None
-    resultat.append({
-        "key": "hr",
-        **GABARIT_CAPTEURS["hr"],
-        "value": round(valeur_hr, 1) if valeur_hr is not None else None,
-        # Pas de serie de battements par minute persistee seconde par
-        # seconde : la fenetre ne serait qu'un decor. On ne l'invente pas.
-        "window": [],
-        "level": niveau_hr,
-        "note": note_hr,
-    })
-
-    valeur_eda = mesures.get("eda_fond")
-    fenetre_eda: list[float] = []
-    if derniere_session is not None:
-        ligne_sudation = (
-            db.query(Mesure)
-            .filter(Mesure.session_id == derniere_session.id, Mesure.capteur == "sudation")
-            .order_by(Mesure.seq.desc())
-            .first()
-        )
-        if ligne_sudation is not None:
-            fenetre_eda = list(ligne_sudation.valeurs.get("eda_us", []))[-30:]
-    resultat.append({
-        "key": "eda",
-        **GABARIT_CAPTEURS["eda"],
-        "value": round(valeur_eda, 2) if valeur_eda is not None else None,
-        "window": fenetre_eda,
-        "level": "green" if valeur_eda is not None else "unreliable",
-        "note": None if valeur_eda is not None else "Aucune mesure recue",
-    })
-
-    # Visage et voix : leurs indices sont desormais ranges avec les autres
-    # mesures (voir POST /sessions/{id}/face et /audio). Des nombres, jamais
-    # une image ni un son.
     # Affiches comme des notes sur 100 (100 = le mieux), comme a l'ecran de la cabine.
     for cle, capteur, champ, raison_coupure in (("face", "visage", "tension", "camera"),
-                                                 ("voice", "voix", "indice", "microphone")):
+                                                 ("voice", "voix", "indice", "microphone"),
+                                                 ("mood", "parole", "humeur", "microphone")):
         actif = getattr(consent, raison_coupure)
         serie: list[float] = []
         if derniere_session is not None and actif:
@@ -160,7 +113,9 @@ def capteurs(cabin_id: str, db: DbSession = Depends(get_db)):
                       .order_by(Mesure.ts.desc()).limit(30).all())
             serie = [
                 notation.note_visage(float(l.valeurs[champ]), l.valeurs.get("sourire"))
-                if capteur == "visage" else notation.note_voix(float(l.valeurs[champ]))
+                if capteur == "visage"
+                else notation.note_voix(float(l.valeurs[champ])) if capteur == "voix"
+                else round(float(l.valeurs[champ]), 1)
                 for l in reversed(lignes) if l.valeurs.get(champ) is not None
             ]
         resultat.append({

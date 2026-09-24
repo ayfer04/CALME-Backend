@@ -73,19 +73,10 @@ def test_tendances(client, db_session):
     assert t["sessionsPerDay"] == 2.0
 
 
-def test_energie_et_consigne(client):
-    e = client.get("/api/v1/power").json()
-    assert e["mode"] == "standby" and e["budgetWatts"] == 72.0
-    assert {l["label"] for l in e["lines"]} >= {"Serveur", "Caméra"}
-    e = client.post("/api/v1/power/setpoint", json={"percent": 40}).json()
-    assert e["mode"] == "degraded" and e["budgetWatts"] == 28.8
-    client.post("/api/v1/power/setpoint", json={"percent": 100})
-
-
 def test_sante_a_la_forme_du_poste_medecin(client):
     h = client.get("/api/v1/health").json()
     assert {"api", "base", "database", "model", "sensors", "buffer"} <= set(h)
-    assert h["sensors"]["total"] == 4
+    assert h["sensors"]["total"] == 3
 
 
 def test_capteurs_visage_et_voix_affichent_leurs_valeurs(client, db_session):

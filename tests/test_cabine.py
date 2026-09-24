@@ -65,7 +65,7 @@ def test_consentement_par_defaut_est_actif(client):
     assert reponse.json() == {"camera": True, "microphone": True}
 
 
-def test_capteurs_renvoie_les_quatre_avec_les_vraies_references_de_composant(client):
+def test_capteurs_renvoie_camera_micro_et_humeur_avec_leurs_references(client):
     """model/sampleRate doivent porter la reference reelle du composant,
     pas un espace reserve de maquette (voir tache-19-brief.md).
     """
@@ -73,11 +73,9 @@ def test_capteurs_renvoie_les_quatre_avec_les_vraies_references_de_composant(cli
     assert reponse.status_code == 200
     corps = reponse.json()
     par_cle = {c["key"]: c for c in corps}
-    assert set(par_cle) == {"hr", "eda", "face", "voice"}
-    assert par_cle["hr"]["model"] == "MAX30102"
-    assert par_cle["hr"]["sampleRate"] == "100 Hz"
-    assert par_cle["eda"]["model"] == "Grove GSR"
-    assert par_cle["eda"]["sampleRate"] == "10 Hz"
+    # Les capteurs de l'Arduino (coeur, sudation) sont abandonnes.
+    assert set(par_cle) == {"face", "voice", "mood"}
+    assert par_cle["mood"]["unit"] == "/100"
     assert par_cle["face"]["model"] == "DJI Osmo Action 4"
     assert par_cle["voice"]["model"] == "DJI Osmo Action 4"
 
@@ -107,23 +105,3 @@ def test_capteur_face_signale_le_consentement_coupe(client, db_session):
     assert par_cle["voice"]["note"] != "Coupé par consentement"
 
 
-def test_capteur_eda_relit_une_vraie_mesure_stockee(client, db_session):
-    a1 = Astronaute(nom="Mei")
-    db_session.add(a1)
-    db_session.flush()
-    session = SessionModel(astronaute_id=a1.id, debut=datetime.now(timezone.utc), mode="measuring")
-    db_session.add(session)
-    db_session.flush()
-
-    eda = nk.eda_simulate(duration=15, sampling_rate=10, scr_number=2, random_state=1).tolist()
-    db_session.add(Mesure(
-        session_id=session.id, device_id="cabine-01", capteur="sudation",
-        seq=0, ts=datetime.now(timezone.utc), valeurs={"eda_us": eda}, qualite={"eda": 0.9},
-    ))
-    db_session.commit()
-
-    corps = client.get("/api/v1/cabins/cabine-01/sensors").json()
-    par_cle = {c["key"]: c for c in corps}
-    assert par_cle["eda"]["value"] is not None
-    assert par_cle["eda"]["level"] == "green"
-    assert par_cle["eda"]["window"] == eda[-30:]
