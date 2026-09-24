@@ -185,3 +185,37 @@ def test_consentement_sur_une_session_absente_est_refuse(client):
         "/api/v1/sessions/999/consent", json={"camera": False, "microphone": False}
     )
     assert reponse.status_code == 404
+
+
+def test_la_note_de_fin_se_calcule_sur_lexercice_meme_sans_coeur(client, db_session):
+    """Capteur cardiaque absent : la note de fin vient du visage mesure
+    pendant l'exercice, et les mesures d'avant la decision n'y comptent pas."""
+    from datetime import timedelta
+
+    from app.models.tables import Mesure
+
+    astro = _astronaute(db_session)
+    session = _session_ouverte(db_session, astro)
+    decision_ts = datetime.now(timezone.utc) - timedelta(minutes=5)
+    db_session.add(Decision(
+        session_id=session.id, ts=decision_ts,
+        indice_charge=62.0, niveau="amber", exercice_declenche=True,
+        consigne_ia="Trois minutes.", source="rules", confiance=0.5,
+        assessment_id="77777777-7777-7777-7777-777777777777", exercice_id="visage",
+    ))
+    # Avant la decision : visage tres crispe (ne doit pas compter).
+    db_session.add(Mesure(session_id=session.id, device_id="cabine-front", capteur="visage",
+                          seq=0, ts=decision_ts - timedelta(minutes=1),
+                          valeurs={"tension": 0.95}, qualite={}))
+    # Pendant l'exercice : visage detendu.
+    for i in range(5):
+        db_session.add(Mesure(session_id=session.id, device_id="cabine-front", capteur="visage",
+                              seq=0, ts=decision_ts + timedelta(seconds=30 + i),
+                              valeurs={"tension": 0.2}, qualite={}))
+    db_session.commit()
+
+    corps = client.post(f"/api/v1/sessions/{session.id}/close").json()
+    assert corps["indexBefore"] == 62.0
+    assert corps["indexAfter"] is not None
+    # Visage detendu (0,2 pour une normale a 0,5) : l'indice passe sous 30.
+    assert corps["indexAfter"] < 30.0

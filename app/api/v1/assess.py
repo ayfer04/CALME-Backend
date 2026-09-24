@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session as DbSession
 
 from app.deps import get_db
-from app.models.tables import Decision, Indicateur, Session as SessionModel
+from app.models.tables import Decision, Indicateur, Mesure, Session as SessionModel
 from app.services.exercices import signal_dominant
 from app.services.indice import INVERSES, POIDS, ecart_z, indice_charge, niveau_depuis
 from app.ws.hub import hub
@@ -229,13 +229,27 @@ class IndiceFacial(BaseModel):
     stillness: float = Field(ge=0, le=1)
 
 
+def _garder(db: DbSession, session_id: int, capteur: str, valeurs: dict) -> None:
+    """Range un indice calcule (visage, voix) avec les autres mesures : sans
+    cela, ils etaient diffuses a l'ecran mais jamais comptes dans l'indice.
+    Seuls les nombres sont gardes - jamais une image, jamais un son."""
+    if db.get(SessionModel, session_id) is None:
+        return
+    db.add(Mesure(session_id=session_id, device_id="cabine-front", capteur=capteur, seq=0,
+                  ts=datetime.now(timezone.utc), valeurs=valeurs, qualite={}))
+    db.commit()
+
+
 @router.post("/sessions/{session_id}/face", status_code=202)
-async def recevoir_indice_facial(session_id: int, corps: IndiceFacial):
+async def recevoir_indice_facial(session_id: int, corps: IndiceFacial,
+                                 db: DbSession = Depends(get_db)):
     """Un flottant par seconde. Aucune image ne transite, jamais.
 
-    L'analyse a lieu dans le navigateur du Pi : la promesse du dossier est
-    donc vraie architecturalement, et pas seulement sur parole.
+    L'analyse a lieu dans le navigateur de la cabine : la promesse du dossier
+    est donc vraie architecturalement, et pas seulement sur parole.
     """
+    _garder(db, session_id, "visage", {"tension": corps.tension, "blinkRate": corps.blinkRate,
+                                        "stillness": corps.stillness})
     await hub.diffuser(session_id, {
         "type": "frame",
         "payload": {"at": corps.at, "heartRate": None, "skinConductance": None,
@@ -245,7 +259,8 @@ async def recevoir_indice_facial(session_id: int, corps: IndiceFacial):
 
 
 @router.post("/sessions/{session_id}/audio")
-async def recevoir_audio(session_id: int, fichier: UploadFile = File(...)):
+async def recevoir_audio(session_id: int, fichier: UploadFile = File(...),
+                         db: DbSession = Depends(get_db)):
     """L'audio est analyse en memoire et detruit dans la meme requete.
 
     Pas de fichier temporaire, pas de chemin sur disque : la seule chose qui
@@ -259,6 +274,7 @@ async def recevoir_audio(session_id: int, fichier: UploadFile = File(...)):
     del octets
 
     indice = indice_vocal(features, BASELINE_VOCALE_GENERIQUE)
+    _garder(db, session_id, "voix", {"indice": indice})
 
     await hub.diffuser(session_id, {
         "type": "frame",

@@ -100,6 +100,11 @@ class Decision(Base):
     # app/services/exercices.py::signal_dominant), pour que POST /recommend
     # rejoue le meme choix sans recalculer la mesure.
     signal_dominant: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # L'indice calcule a la cloture, apres l'exercice (POST /sessions/{id}/close).
+    indice_apres: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Acquittement de l'alerte par le medecin (seance passee au rouge).
+    alerte_acquittee_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    alerte_acquittee_par: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class ConsentementCabine(Base):

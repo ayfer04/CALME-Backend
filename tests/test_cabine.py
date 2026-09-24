@@ -103,8 +103,8 @@ def test_capteur_face_signale_le_consentement_coupe(client, db_session):
 
     corps = client.get("/api/v1/cabins/cabine-01/sensors").json()
     par_cle = {c["key"]: c for c in corps}
-    assert par_cle["face"]["note"] == "Coupe par consentement"
-    assert par_cle["voice"]["note"] != "Coupe par consentement"
+    assert par_cle["face"]["note"] == "Coupé par consentement"
+    assert par_cle["voice"]["note"] != "Coupé par consentement"
 
 
 def test_capteur_eda_relit_une_vraie_mesure_stockee(client, db_session):

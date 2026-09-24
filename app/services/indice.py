@@ -17,6 +17,12 @@ POIDS: dict[str, float] = {
 
 INVERSES = {"hrv_rmssd"}
 
+# En dessous de cette couverture (somme des poids des signaux presents), la
+# part manquante compte comme "a sa normale" : un seul signal ne peut plus
+# porter l'indice a lui seul jusqu'aux extremes. Sans ce plancher, la
+# sudation seule (0,35 des poids) poussait l'indice a 90 sur un capteur bruite.
+COUVERTURE_MIN = 0.6
+
 SEUIL_ORANGE = 40.0
 SEUIL_ROUGE = 70.0
 CONFIANCE_MIN = 0.4
@@ -37,7 +43,8 @@ def indice_charge(zs: dict[str, float]) -> tuple[float, float]:
     """Moyenne ponderee des ecarts, ramenee sur 100.
 
     Un signal absent voit son poids retire et les autres renormalises : le
-    systeme perd de la certitude, pas sa fonction. La confiance renvoyee est
+    systeme perd de la certitude, pas sa fonction. Sous COUVERTURE_MIN, la
+    renormalisation s'arrete : ce qui manque compte comme neutre. La confiance renvoyee est
     la somme des poids disponibles, et elle est affichee, jamais cachee.
     """
     disponibles = {cle: z for cle, z in zs.items() if z is not None and cle in POIDS}
@@ -49,7 +56,7 @@ def indice_charge(zs: dict[str, float]) -> tuple[float, float]:
         POIDS[cle] * (-z if cle in INVERSES else z)
         for cle, z in disponibles.items()
     )
-    indice = 30.0 + 20.0 * (somme / confiance)
+    indice = 30.0 + 20.0 * (somme / max(confiance, COUVERTURE_MIN))
     return max(0.0, min(100.0, indice)), confiance
 
 

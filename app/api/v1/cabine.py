@@ -63,7 +63,8 @@ def _crew_member(astronaute: Astronaute) -> dict:
         "id": str(astronaute.id),
         "displayName": astronaute.nom,
         "role": astronaute.role,
-        "initials": astronaute.initiales,
+        # Initiales deduites du nom quand l'enrolement ne les a pas saisies.
+        "initials": astronaute.initiales or "".join(m[0] for m in astronaute.nom.split()[:2]).upper(),
         "joinedSol": astronaute.sol_embarquement,
     }
 
@@ -145,21 +146,28 @@ def capteurs(cabin_id: str, db: DbSession = Depends(get_db)):
         "note": None if valeur_eda is not None else "Aucune mesure recue",
     })
 
-    # Visage et voix ne transitent que par le WebSocket au moment ou ils
-    # sont produits (voir POST /sessions/{id}/face et /audio) : rien n'est
-    # ecrit en base pour eux, donc rien de reel a relire ici. On le dit
-    # plutot que d'inventer une valeur qui n'a jamais existe.
-    for cle, raison_coupure in (("face", "camera"), ("voice", "microphone")):
+    # Visage et voix : leurs indices sont desormais ranges avec les autres
+    # mesures (voir POST /sessions/{id}/face et /audio). Des nombres, jamais
+    # une image ni un son.
+    for cle, capteur, champ, raison_coupure in (("face", "visage", "tension", "camera"),
+                                                 ("voice", "voix", "indice", "microphone")):
         actif = getattr(consent, raison_coupure)
+        serie: list[float] = []
+        if derniere_session is not None and actif:
+            lignes = (db.query(Mesure)
+                      .filter(Mesure.session_id == derniere_session.id, Mesure.capteur == capteur)
+                      .order_by(Mesure.ts.desc()).limit(30).all())
+            serie = [round(float(l.valeurs[champ]), 3) for l in reversed(lignes)
+                     if l.valeurs.get(champ) is not None]
         resultat.append({
             "key": cle,
             **GABARIT_CAPTEURS[cle],
-            "value": None,
-            "window": [],
-            "level": "unreliable",
+            "value": serie[-1] if serie else None,
+            "window": serie,
+            "level": "green" if serie else "unreliable",
             "note": (
-                "Coupe par consentement" if not actif
-                else "Non journalise en base (flux WebSocket uniquement)"
+                "Coupé par consentement" if not actif
+                else None if serie else "Aucune mesure reçue pendant la dernière séance"
             ),
         })
 

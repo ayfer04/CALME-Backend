@@ -154,7 +154,10 @@ def clore_session(session_id: int, db: DbSession = Depends(get_db)):
     # "indexAfter est celui calcule a la cloture" : ici, et seulement ici, un
     # nouveau calcul est le bon geste - ce n'est pas une relecture de la
     # decision prise a l'assessment, c'est une decision neuve prise maintenant.
-    mesures_cloture = mesures_de_la_seance(db, session_id)
+    # Seulement ce qui a ete mesure depuis la decision, c'est-a-dire pendant
+    # l'exercice : sinon l'"apres" melangeait la mesure d'avant et ne pouvait
+    # presque pas bouger.
+    mesures_cloture = mesures_de_la_seance(db, session_id, depuis=decision.ts)
     indicateurs_cloture = indicateurs_du_front(mesures_cloture)
 
     db.add(Indicateur(
@@ -168,17 +171,15 @@ def clore_session(session_id: int, db: DbSession = Depends(get_db)):
         frequence_respiratoire=mesures_cloture.get("respiration"),
     ))
 
-    # Sans aucun signal biologique, indice_charge() renverrait quand meme
-    # 30.0 a confiance nulle (son repli neutre) : ce n'est pas "l'indice a la
-    # cloture", c'est l'absence de mesure. On le dit avec null plutot que de
-    # laisser passer ce repli pour un vrai chiffre.
+    # Sans aucun signal pendant l'exercice, indice_charge() renverrait quand
+    # meme 30.0 a confiance nulle (son repli neutre) : ce n'est pas "l'indice
+    # a la cloture", c'est l'absence de mesure. On le dit avec null plutot que
+    # de laisser passer ce repli pour un vrai chiffre. Un seul signal suffit
+    # (sudation, visage...) : le coeur n'est plus exige.
     index_apres = None
     niveau_apres = None
-    a_du_biologique = (
-        mesures_cloture.get("fc_moyenne") is not None
-        or mesures_cloture.get("hrv_rmssd") is not None
-    )
-    if a_du_biologique:
+    signaux = ("fc_moyenne", "hrv_rmssd", "eda_fond", "eda_reponses", "visage", "voix")
+    if any(mesures_cloture.get(cle) is not None for cle in signaux):
         historique = historique_indicateurs(db, session.astronaute_id, session_id)
         baseline, facteur = baseline_ou_generique(historique, BASELINE_GENERIQUE)
         evaluation_cloture = construire_assessment(
@@ -187,6 +188,7 @@ def clore_session(session_id: int, db: DbSession = Depends(get_db)):
         index_apres = evaluation_cloture["index"]
         niveau_apres = evaluation_cloture["level"]
 
+    decision.indice_apres = index_apres
     session.fin = datetime.now(timezone.utc)
     session.mode = "standby"
     db.commit()

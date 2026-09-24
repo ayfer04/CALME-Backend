@@ -19,6 +19,10 @@ RANG = {"green": 0, "amber": 1, "red": 2}
 # "Box Breathing & Binaural Beats", Breathwork Beats by Touek, licence
 # Creative Commons BY - l'attribution est affichee pendant l'exercice.
 PISTE_CARRE = "/audio/respiration-carree-80bpm.ogg"
+# "Winter Aurora" (SleepTube) : pas libre de droits, donc jamais copiee - lue
+# par le lecteur integre de YouTube, que l'auteur autorise (voir
+# Frontend/src/features/cabin/audio/lecteur.ts, avec la piste libre en secours).
+PISTE_RELAXATION = "youtube:RzYIQMYjao4"
 
 CATALOGUE: list[dict] = [
     {"id": "cc365", "name": "Cohérence cardiaque 365", "duration": 5,
@@ -39,15 +43,15 @@ CATALOGUE: list[dict] = [
      "signals": ["fc_moyenne", "visage"]},
     {"id": "visage", "name": "Relâchement du visage", "duration": 3,
      "indication": "Visage crispé : sourcils froncés, mâchoire serrée",
-     "minLevel": "green", "kind": "relaxation", "music": PISTE_CARRE,
+     "minLevel": "green", "kind": "relaxation", "music": PISTE_RELAXATION,
      "signals": ["visage"]},
     {"id": "jacobson", "name": "Relaxation musculaire progressive", "duration": 8,
      "indication": "Corps tendu, sudation de fond et visage crispés",
-     "minLevel": "amber", "kind": "relaxation", "music": PISTE_CARRE,
+     "minLevel": "amber", "kind": "relaxation", "music": PISTE_RELAXATION,
      "signals": ["eda_fond", "visage"]},
     {"id": "scan", "name": "Scan corporel", "duration": 7,
      "indication": "Charge modérée, sans signal dominant",
-     "minLevel": "green", "kind": "relaxation", "music": PISTE_CARRE,
+     "minLevel": "green", "kind": "relaxation", "music": PISTE_RELAXATION,
      "signals": ["diffus"]},
     {"id": "ancrage5432", "name": "Ancrage sensoriel 5-4-3-2-1", "duration": 5,
      "indication": "Rumination, pensées qui tournent en boucle",
@@ -59,19 +63,19 @@ CATALOGUE: list[dict] = [
      "signals": ["voix", "eda_reponses"]},
     {"id": "visualisation", "name": "La Terre vue du hublot", "duration": 6,
      "indication": "Lassitude, voix éteinte, besoin d'évasion",
-     "minLevel": "green", "kind": "relaxation", "music": PISTE_CARRE,
+     "minLevel": "green", "kind": "relaxation", "music": PISTE_RELAXATION,
      "signals": ["fatigue", "diffus"]},
     {"id": "playlist", "name": "Playlist à tempo décroissant", "duration": 10,
      "indication": "Charge modérée, descente progressive",
-     "minLevel": "green", "kind": "audio", "music": PISTE_CARRE,
+     "minLevel": "green", "kind": "audio", "music": PISTE_RELAXATION,
      "signals": ["diffus"]},
     {"id": "circadien", "name": "Séquence lumineuse circadienne", "duration": 15,
      "indication": "Désynchronisation, baisse de vigilance",
-     "minLevel": "green", "kind": "light", "music": PISTE_CARRE,
+     "minLevel": "green", "kind": "light", "music": PISTE_RELAXATION,
      "signals": ["fatigue"]},
     {"id": "sieste", "name": "Micro-sieste guidée", "duration": 20,
      "indication": "Fatigue accumulée",
-     "minLevel": "amber", "kind": "nap", "music": PISTE_CARRE,
+     "minLevel": "amber", "kind": "nap", "music": PISTE_RELAXATION,
      "signals": ["fatigue"]},
     {"id": "journal", "name": "Journal vocal différé", "duration": 8,
      "indication": "Repli, isolement social",

@@ -35,6 +35,7 @@ DELAI_CONNEXION_S = 2.0
 # Delai de lecture : le temps qu'on tolere pour une vraie generation, une
 # fois la connexion etablie.
 DELAI_MAX_S = 12.0
+CANDIDATS_MAX = 5
 
 # Phrases prononcees par la cabine : elles gardent leurs accents, que Piper
 # lit (sans eux, "guidee" se prononce comme il est ecrit).
@@ -69,7 +70,9 @@ SYSTEME = (
     "Tu es l'assistant d'une cabine de recuperation a bord d'un vaisseau. "
     "Tu choisis UN exercice dans la liste fournie et tu rediges une consigne "
     "de deux phrases maximum, calme, en tutoyant, sans emoji, sans "
-    "diagnostic medical. Tu ne proposes rien qui ne soit pas dans la liste."
+    "diagnostic medical. Tu ne proposes rien qui ne soit pas dans la liste. "
+    "Tu reprends le deroule de l'exercice choisi tel qu'il est donne : tu n'en "
+    "changes jamais les durees ni les rythmes."
 )
 
 
@@ -88,10 +91,17 @@ def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[
     try:
         import ollama
 
+        # Les cinq plus adaptes seulement (la liste arrive triee) : le prompt
+        # reste court, et le CPU de la tour le lit en quelques secondes.
+        autorises = autorises[:CANDIDATS_MAX]
         delai = httpx.Timeout(DELAI_MAX_S, connect=DELAI_CONNEXION_S)
         client = ollama.Client(host=HOTE_OLLAMA, timeout=delai)
-        liste = "\n".join(f"- {e['id']} : {e['name']} ({e['duration']} min, {e['indication']})"
-                          for e in autorises)
+        # Le deroule reel de chaque exercice est fourni : sans lui, le modele
+        # inventait les rythmes ("4 secondes" pour un carre en 6-6-6-6).
+        liste = "\n".join(
+            f"- {e['id']} : {e['name']} ({e['duration']} min, {e['indication']}). "
+            f"Deroule : {CONSIGNES_GENERIQUES.get(e['id'], '')}"
+            for e in autorises)
         dominant = evaluation.get("dominantSignal")
         # La liste arrive deja triee (les plus adaptes au signal dominant
         # d'abord) : le modele sait pourquoi, et peut s'y tenir.

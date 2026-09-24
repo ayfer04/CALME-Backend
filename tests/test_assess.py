@@ -223,3 +223,21 @@ def test_la_decision_retient_le_signal_dominant(client, db_session):
     corps = client.post(f"/api/v1/sessions/{session.id}/assess").json()
     decision = db_session.query(Decision).filter_by(assessment_id=corps["id"]).one()
     assert decision.signal_dominant == corps["dominantSignal"]
+
+
+def test_le_visage_et_la_voix_comptent_dans_la_mesure(client, db_session):
+    """Diffuses a l'ecran, ils n'etaient jamais ranges : l'indice les
+    ignorait. Ils sont maintenant gardes (des nombres, jamais une image)."""
+    from app.api.v1.calcul import mesures_de_la_seance
+
+    astro = _astronaute(db_session)
+    session = _session_ouverte(db_session, astro)
+    db_session.commit()
+    for tension in (0.4, 0.6):
+        r = client.post(f"/api/v1/sessions/{session.id}/face",
+                        json={"at": "2026-09-24T10:00:00Z", "tension": tension,
+                              "blinkRate": 12, "stillness": 0.8})
+        assert r.status_code == 202
+
+    mesures = mesures_de_la_seance(db_session, session.id)
+    assert abs(mesures["visage"] - 0.5) < 1e-9

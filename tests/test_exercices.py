@@ -14,7 +14,7 @@ def test_chaque_exercice_a_la_forme_du_contrat_front():
         assert exercice["minLevel"] in {"green", "amber", "red"}
         assert exercice["kind"] in {"breathing", "grounding", "audio", "light", "nap", "journal",
                                     "relaxation", "reflection"}
-        assert exercice["music"] is None or exercice["music"].startswith("/audio/")
+        assert exercice["music"] is None or exercice["music"].startswith(("/audio/", "youtube:"))
         assert exercice["signals"] and set(exercice["signals"]) <= set(LIBELLES_SIGNAUX)
 
 

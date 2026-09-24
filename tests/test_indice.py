@@ -51,3 +51,19 @@ def test_lecart_z_est_borne():
     assert ecart_z(1000.0, 0.0, 1.0) == 3.0
     assert ecart_z(-1000.0, 0.0, 1.0) == -3.0
     assert ecart_z(5.0, 5.0, 0.0) == 0.0
+
+
+def test_un_seul_signal_ne_porte_plus_lindice_aux_extremes():
+    """Sudation seule (0,35 des poids) au plafond : avant le plancher de
+    couverture, l'indice sautait a 90 ; il reste maintenant sous le rouge."""
+    indice, confiance = indice_charge({"eda_reponses": 3.0, "eda_fond": 3.0})
+    assert abs(confiance - 0.35) < 1e-9
+    assert indice < 70.0
+
+
+def test_au_dela_de_la_couverture_minimale_rien_ne_change():
+    zs = {cle: 1.0 for cle in POIDS if cle not in ("visage", "voix")}
+    zs["hrv_rmssd"] = -1.0
+    indice, confiance = indice_charge(zs)
+    assert abs(confiance - 0.75) < 1e-9
+    assert abs(indice - 50.0) < 0.01
