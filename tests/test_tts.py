@@ -1,6 +1,13 @@
+import io
 import pytest
 
 from app.services import synthese
+
+
+@pytest.fixture(autouse=True)
+def _moteur_piper(monkeypatch):
+    """Ces tests simulent la voix Piper (le secours) : Kokoro est ecarte."""
+    monkeypatch.setattr(synthese, "MOTEUR", "piper")
 
 
 @pytest.fixture(autouse=True)
@@ -100,3 +107,31 @@ def test_la_reponse_est_un_wav(client, monkeypatch):
     assert reponse.headers["content-type"] == "audio/wav"
     assert reponse.content[:4] == b"RIFF"
     assert reponse.content[8:12] == b"WAVE"
+
+
+def test_kokoro_indisponible_retombe_sur_piper(client, monkeypatch):
+    """Le moteur principal manque : la cabine parle quand meme, avec Piper."""
+    monkeypatch.setattr(synthese, "MOTEUR", "kokoro")
+
+    def absent():
+        raise synthese.VoixIndisponible("bibliotheque kokoro non installee")
+
+    monkeypatch.setattr(synthese, "_charger_kokoro", absent)
+    monkeypatch.setattr(synthese, "_charger_voix", lambda: FausseVoix())
+    reponse = client.post("/api/v1/tts", json={"texte": "Bonjour."})
+    assert reponse.status_code == 200
+    assert reponse.content[:4] == b"RIFF"
+
+
+def test_kokoro_produit_un_wav_24k(monkeypatch):
+    import numpy as np
+    import wave as w
+
+    class FauxPipeline:
+        def __call__(self, texte, voice, speed):
+            yield None, None, np.zeros(2400, dtype=np.float32)
+
+    monkeypatch.setattr(synthese, "_charger_kokoro", lambda: FauxPipeline())
+    octets = synthese._synthetiser_kokoro("Bonjour.")
+    with w.open(io.BytesIO(octets)) as f:
+        assert f.getframerate() == 24000 and f.getnframes() == 2400

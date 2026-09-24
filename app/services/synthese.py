@@ -1,4 +1,9 @@
-"""Synthese vocale de la cabine : Piper transforme un texte en WAV.
+"""Synthese vocale de la cabine : un texte devient un WAV.
+
+Deux moteurs, tous deux hors ligne. Kokoro (voix "ff_siwis", la plus
+naturelle, choisie a l'ecoute parmi cinq) est le moteur principal ; Piper
+(voix "Pierre") prend le relais si Kokoro manque ou echoue. MOTEUR_VOIX=piper
+force Piper.
 
 Piper est entierement optionnel. Si sa bibliotheque n'est pas installee, si
 le modele de voix embarque est absent, ou si la synthese echoue pour une
@@ -97,7 +102,83 @@ def _reglages_synthese(voix):
     return _reglages
 
 
+# --- Kokoro ------------------------------------------------------------------
+
+MOTEUR = os.environ.get("MOTEUR_VOIX", "kokoro")
+VOIX_KOKORO = os.environ.get("VOIX_KOKORO", "ff_siwis")
+VITESSE_KOKORO = float(os.environ.get("VITESSE_KOKORO", "0.95"))   # <1 = plus lent
+TAUX_KOKORO = 24_000
+
+_kokoro = None
+
+
+def _charger_kokoro():
+    """KPipeline francais, charge une fois. Le modele (Kokoro-82M) et la voix
+    sont telecharges au build de l'image (voir le Dockerfile) : rien ne part
+    sur le reseau au moment de la requete."""
+    global _kokoro
+    if _kokoro is None:
+        try:
+            from kokoro import KPipeline
+        except ImportError as erreur:
+            raise VoixIndisponible("bibliotheque kokoro non installee") from erreur
+        try:
+            _kokoro = KPipeline(lang_code="f", repo_id="hexgrad/Kokoro-82M")
+        except Exception as erreur:
+            raise VoixIndisponible(f"echec de chargement de Kokoro : {erreur}") from erreur
+    return _kokoro
+
+
+def _synthetiser_kokoro(texte: str) -> bytes:
+    import numpy as np
+
+    pipeline = _charger_kokoro()
+    try:
+        morceaux = [np.asarray(audio, dtype=np.float32)
+                    for _, _, audio in pipeline(texte, voice=VOIX_KOKORO, speed=VITESSE_KOKORO)
+                    if audio is not None]
+    except Exception as erreur:
+        raise VoixIndisponible(f"echec de synthese Kokoro : {erreur}") from erreur
+    if not morceaux:
+        raise VoixIndisponible("Kokoro n'a rien produit")
+    pcm = (np.clip(np.concatenate(morceaux), -1.0, 1.0) * 32767).astype("<i2")
+    tampon = io.BytesIO()
+    with wave.open(tampon, "wb") as fichier_wav:
+        fichier_wav.setnchannels(1)
+        fichier_wav.setsampwidth(2)
+        fichier_wav.setframerate(TAUX_KOKORO)
+        fichier_wav.writeframes(pcm.tobytes())
+    return tampon.getvalue()
+
+
+def precharger() -> None:
+    """Charge le moteur principal en avance : sans cela, la premiere phrase
+    de la premiere seance attendrait le chargement du modele."""
+    try:
+        if MOTEUR == "kokoro":
+            _synthetiser_kokoro("Bonjour.")
+        else:
+            _charger_voix()
+    except VoixIndisponible:
+        pass
+
+
 def synthetiser(texte: str) -> bytes:
+    """Kokoro d'abord, Piper en secours : la cabine parle toujours."""
+    if MOTEUR == "kokoro":
+        cle = hashlib.sha256(f"kokoro|{VOIX_KOKORO}|{VITESSE_KOKORO}|{texte}".encode("utf-8")).hexdigest()
+        if cle in _cache:
+            return _cache[cle]
+        try:
+            octets = _synthetiser_kokoro(texte)
+            _cache[cle] = octets
+            return octets
+        except VoixIndisponible:
+            pass
+    return _synthetiser_piper(texte)
+
+
+def _synthetiser_piper(texte: str) -> bytes:
     """Renvoie un WAV (octets) prononcant `texte`, en francais.
 
     Rien n'est ecrit sur disque : le WAV est assemble en memoire, comme

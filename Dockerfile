@@ -1,9 +1,24 @@
-FROM python:3.13-slim
+# 3.12 et non 3.13 : Kokoro (la voix de la cabine) ne s'installe pas encore
+# sous 3.13.
+FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# eSpeak : la phonetisation francaise de Kokoro. PyTorch en version CPU, avant
+# le reste : sinon pip tirerait la version CUDA (plusieurs Go de plus), inutile
+# sur une tour sans carte graphique.
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends espeak-ng \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+COPY requirements.txt requirements-voix.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-voix.txt
+
+# Voix de la cabine (voir app/services/synthese.py) : Kokoro-82M et la voix
+# ff_siwis, telecharges ici, au build ; ensuite plus aucun acces au reseau.
+ENV HF_HOME=/app/modeles/hf
+RUN python -c "from kokoro import KPipeline; p = KPipeline(lang_code='f', repo_id='hexgrad/Kokoro-82M'); list(p('Bonjour.', voice='ff_siwis'))"
+ENV MOTEUR_VOIX=kokoro VOIX_KOKORO=ff_siwis
 
 # Modele Whisper du dialogue, telecharge ici, au build, et jamais a la requete :
 # la cabine doit pouvoir converser hors ligne (voir app/services/dialogue.py).
@@ -15,6 +30,12 @@ ADD https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/upmc/mediu
 
 ENV MODELE_WHISPER=small DOSSIER_WHISPER=/app/modeles/whisper
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8', download_root='/app/modeles/whisper')"
+
+# Tous les modeles sont telecharges (Kokoro, Piper, Whisper) : a partir d'ici,
+# plus aucun acces au reseau, ni au build ni a l'execution. Cette ligne doit
+# rester APRES le dernier telechargement - placee plus haut, elle empechait
+# Whisper de telecharger son modele.
+ENV HF_HUB_OFFLINE=1
 
 COPY app/ ./app/
 

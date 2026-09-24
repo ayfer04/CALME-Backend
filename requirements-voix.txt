@@ -1,0 +1,3 @@
+# Voix de la cabine (Kokoro), installee dans l'image seulement : torch n'a pas
+# de sens sur le poste de developpement, ou les tests simulent la voix.
+kokoro==0.9.4
