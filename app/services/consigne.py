@@ -37,7 +37,7 @@ DELAI_CONNEXION_S = 2.0
 # Delai de lecture : le temps qu'on tolere pour une vraie generation, une
 # fois la connexion etablie.
 DELAI_MAX_S = 12.0
-CANDIDATS_MAX = 5
+CANDIDATS_MAX = 3
 
 # Phrases prononcees par la cabine : elles gardent leurs accents, que Piper
 # lit (sans eux, "guidee" se prononce comme il est ecrit).
@@ -124,7 +124,7 @@ def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[
     try:
         import ollama
 
-        # Les cinq plus adaptes seulement (la liste arrive triee) : le prompt
+        # Les trois plus adaptes seulement (la liste arrive triee) : le prompt
         # reste court, et le CPU de la tour le lit en quelques secondes.
         autorises = autorises[:CANDIDATS_MAX]
         delai = httpx.Timeout(DELAI_MAX_S, connect=DELAI_CONNEXION_S)
