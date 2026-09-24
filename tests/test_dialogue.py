@@ -146,12 +146,12 @@ def test_lhumeur_est_notee_et_gardee_seule(client, monkeypatch, faux_ollama, db_
     s = SessionModel(astronaute_id=a.id, debut=datetime.now(timezone.utc), mode="measuring")
     db_session.add(s)
     db_session.commit()
-    monkeypatch.setattr(dialogue, "transcrire", lambda octets: "Journee difficile.")
+    monkeypatch.setattr(dialogue, "transcrire", lambda octets: "Une journee vraiment tres difficile.")
     corps = client.post(f"/api/v1/sessions/{s.id}/dialogue",
                         files={"fichier": ("voix.wav", _wav(), "audio/wav")}).json()
     assert corps["humeur"] == 40
     lignes = db_session.query(Mesure).filter_by(session_id=s.id, capteur="parole").all()
-    assert [l.valeurs for l in lignes] == [{"humeur": 40}]
+    assert [l.valeurs for l in lignes] == [{"humeur": 40, "detresse": False}]
 
 
 def test_les_mots_de_detresse_font_tomber_lhumeur(client, monkeypatch, faux_ollama):

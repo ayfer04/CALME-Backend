@@ -64,7 +64,10 @@ async def tour_de_dialogue(
         # Seule la note est gardee : ni les mots, ni le son.
         if db.get(SessionModel, session_id) is not None:
             db.add(Mesure(session_id=session_id, device_id="cabine-front", capteur="parole", seq=0,
-                          ts=datetime.now(timezone.utc), valeurs={"humeur": humeur}, qualite={}))
+                          ts=datetime.now(timezone.utc),
+                          valeurs={"humeur": humeur,
+                                   "detresse": dialogue.detresse_exprimee(entendu)},
+                          qualite={}))
             db.commit()
         await hub.diffuser(session_id, {"type": "frame", "payload": {
             "at": None, "heartRate": None, "skinConductance": None, "faceTension": None,

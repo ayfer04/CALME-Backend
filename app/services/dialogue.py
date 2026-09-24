@@ -175,6 +175,12 @@ CONSIGNE_HUMEUR = (
 )
 
 
+def detresse_exprimee(texte: str) -> bool:
+    from app.services.notation import detresse_exprimee as _detresse
+
+    return _detresse(texte)
+
+
 def repondre(historique: list[dict], entendu: str,
              dernier_tour: bool) -> tuple[str, str, float | None]:
     """Renvoie (relance, source, humeur). Source "model" ou "rules" ; humeur

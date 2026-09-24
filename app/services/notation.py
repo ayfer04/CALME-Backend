@@ -65,12 +65,25 @@ MOTS_DETRESSE = re.compile(
 )
 
 
+# Le modele seul ne descend pas sous ce plancher : il lui arrivait de noter 0
+# une phrase mal transcrite. Seuls les mots de detresse, ci-dessus, font
+# tomber l'humeur au plus bas - et passer la seance au rouge.
+PLANCHER_MODELE = 16.0
+# Sous ce nombre de mots, la phrase est trop courte (ou du bruit mal
+# transcrit) pour juger une humeur.
+MOTS_MIN_HUMEUR = 4
+
+
+def detresse_exprimee(texte: str) -> bool:
+    return bool(texte) and bool(MOTS_DETRESSE.search(texte))
+
+
 def humeur_securisee(humeur: float | None, texte: str) -> float | None:
-    if texte and MOTS_DETRESSE.search(texte):
+    if detresse_exprimee(texte):
         return min(humeur if humeur is not None else 100.0, 5.0)
-    if humeur is None:
+    if humeur is None or len((texte or "").split()) < MOTS_MIN_HUMEUR:
         return None
-    return round(_borner(float(humeur)), 1)
+    return round(max(PLANCHER_MODELE, _borner(float(humeur))), 1)
 
 
 def notes_de(mesures: dict) -> dict[str, float | None]:

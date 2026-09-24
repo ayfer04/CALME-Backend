@@ -34,7 +34,14 @@ def test_une_humeur_de_detresse_passe_au_rouge_quoi_quil_arrive():
 
 def test_filet_de_securite_sur_les_mots_de_detresse():
     assert notation.humeur_securisee(80, "je veux en finir") == 5.0
-    assert notation.humeur_securisee(80, "journée tranquille") == 80.0
+    assert notation.humeur_securisee(80, "une journée plutôt tranquille") == 80.0
+
+
+def test_le_modele_seul_ne_note_pas_la_detresse_ni_le_bruit():
+    """Un 0 du modele sur une vraie phrase est ramene au plancher ; une phrase
+    trop courte (souvent du bruit mal transcrit) n'est pas notee."""
+    assert notation.humeur_securisee(0, "je ne sais pas trop quoi dire") == 16.0
+    assert notation.humeur_securisee(0, "euh bon") is None
 
 
 def test_verdict():

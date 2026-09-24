@@ -175,3 +175,25 @@ def test_sans_camera_ni_micro_on_ne_conclut_rien():
     a = construire_assessment(session_id=1, mesures={})
     assert a["level"] == "unreliable"
     assert {m["signal"] for m in a["missingSignals"]} == {"face", "voice"}
+
+
+def test_lhumeur_est_la_moyenne_sauf_detresse(db_session):
+    from datetime import datetime, timezone
+
+    from app.api.v1.calcul import mesures_de_la_seance
+    from app.models.tables import Mesure
+
+    astro = _astronaute(db_session)
+    session = _session_ouverte(db_session, astro)
+    for h, d in ((80.0, False), (40.0, False)):
+        db_session.add(Mesure(session_id=session.id, device_id="cabine-front", capteur="parole",
+                              seq=0, ts=datetime.now(timezone.utc),
+                              valeurs={"humeur": h, "detresse": d}, qualite={}))
+    db_session.commit()
+    assert mesures_de_la_seance(db_session, session.id)["parole"] == 60.0
+
+    db_session.add(Mesure(session_id=session.id, device_id="cabine-front", capteur="parole", seq=0,
+                          ts=datetime.now(timezone.utc), valeurs={"humeur": 5.0, "detresse": True},
+                          qualite={}))
+    db_session.commit()
+    assert mesures_de_la_seance(db_session, session.id)["parole"] == 5.0
