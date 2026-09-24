@@ -9,7 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 
-from app.api.v1 import assess, cabine, health, ingest, recommendations, sessions, stream, tts
+from app.api.v1 import assess, cabine, dialogue, health, ingest, recommendations, sessions, stream, tts
 
 logger = logging.getLogger("calme")
 
@@ -49,6 +49,7 @@ app.include_router(assess.router, prefix="/api/v1", tags=["assess"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(recommendations.router, prefix="/api/v1", tags=["recommendations"])
 app.include_router(cabine.router, prefix="/api/v1", tags=["cabine"])
+app.include_router(dialogue.router, prefix="/api/v1", tags=["dialogue"])
 app.include_router(tts.router, prefix="/api/v1", tags=["tts"])
 
 

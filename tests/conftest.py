@@ -5,6 +5,11 @@ rapide, isolee entre tests, et suffisante puisque rien ici n'exploite de
 fonctionnalite specifique a Postgres.
 """
 
+import os
+
+# Avant tout import de l'application : pas de prechargement de Whisper en test.
+os.environ.setdefault("PRECHARGER_WHISPER", "0")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

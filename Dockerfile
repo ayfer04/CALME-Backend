@@ -5,6 +5,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Modele Whisper du dialogue, telecharge ici, au build, et jamais a la requete :
+# la cabine doit pouvoir converser hors ligne (voir app/services/dialogue.py).
+ENV MODELE_WHISPER=small DOSSIER_WHISPER=/app/modeles/whisper
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8', download_root='/app/modeles/whisper')"
+
 COPY app/ ./app/
 
 # Fichiers statiques du front (voir app/main.py) : ce dossier est vide par
