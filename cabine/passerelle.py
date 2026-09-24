@@ -89,7 +89,10 @@ def construire(seq: int, ppg: list[int], gsr: list[int], ma: float | None,
         "device_id": device_id,
         "ts": ts,
         "seq": seq,
-        "ppg_raw": ppg,
+        # Sans doigt (ou capteur absent, IR a 0), le signal n'est que du bruit
+        # ou des zeros : on ne l'envoie pas, plutot que de laisser le serveur
+        # chercher des battements dedans.
+        "ppg_raw": ppg if doigt else [],
         "eda_us": eda,
         # Le firmware ecrit -1 tant que l'INA219 n'a pas repondu.
         "ma": ma if ma is not None and ma >= 0 else None,

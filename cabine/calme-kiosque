@@ -1,0 +1,14 @@
+#!/bin/sh
+# Lance l interface de la cabine en plein ecran sur l ecran de la tour.
+# Profil Chrome dedie : n interfere pas avec le Chrome habituel, et garde
+# les autorisations camera/micro de l application.
+# 127.0.0.1 et non localhost : sur cette tour, localhost ne mene pas au front.
+exec /usr/bin/google-chrome \
+  --user-data-dir="$HOME/.config/calme-kiosque" \
+  ${WAYLAND_DISPLAY:+--ozone-platform=wayland} \
+  --kiosk http://127.0.0.1:8081 \
+  --noerrdialogs --disable-infobars --no-first-run --password-store=basic \
+  --autoplay-policy=no-user-gesture-required \
+  --use-fake-ui-for-media-stream \
+  --overscroll-history-navigation=0 --disable-pinch \
+  --check-for-update-interval=31536000

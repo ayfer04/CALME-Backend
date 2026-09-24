@@ -41,6 +41,7 @@ def test_une_seconde_de_mesures_donne_100_ppg_et_10_eda():
 def test_qualite_nulle_sans_doigt_sur_le_capteur():
     message = _message(ppg=[800] * 100)
     assert message["qualite"]["cardiaque"] == 0.0
+    assert message["ppg_raw"] == []          # pas de signal plat envoye au serveur
 
 
 def test_courant_absent_quand_le_firmware_ecrit_moins_un():

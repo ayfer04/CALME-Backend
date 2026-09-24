@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=C.A.L.M.E. - cabine
+Comment=Interface de la cabine en plein ecran
+Exec=/home/calme/.local/bin/calme-kiosque
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5

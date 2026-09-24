@@ -75,9 +75,32 @@ void lireCommandes() {
   }
 }
 
+// Liste les adresses qui repondent sur le bus : le diagnostic le plus utile
+// quand un capteur manque (fil debranche, adaptateur de niveau sans courant).
+void scannerI2C() {
+  Serial.print("#I2C");
+  uint8_t trouves = 0;
+  for (uint8_t adresse = 1; adresse < 127; adresse++) {
+    Wire.beginTransmission(adresse);
+    if (Wire.endTransmission() == 0) {
+      Serial.print(" 0x");
+      if (adresse < 16) Serial.print('0');
+      Serial.print(adresse, HEX);
+      trouves++;
+    }
+  }
+  Serial.println(trouves ? "" : " aucun peripherique (attendus : 0x40 INA219, 0x57 MAX30102)");
+}
+
 void setup() {
   Serial.begin(115200);
+  Serial.println("#BOOT calme_capteurs");
   Wire.begin();
+  // Sans delai maximal, un bus I2C bloque (SDA tenue a la masse par un fil
+  // ou un adaptateur de niveau non alimente) fige Wire pour toujours : la
+  // carte ne dit alors plus rien. Avec lui, elle signale et continue.
+  Wire.setWireTimeout(3000, true);
+  scannerI2C();
 
   pinMode(BROCHE_RELAIS_ECRAN, OUTPUT);
   pinMode(BROCHE_RELAIS_CAMERA, OUTPUT);
