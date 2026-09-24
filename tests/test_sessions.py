@@ -219,3 +219,14 @@ def test_la_note_de_fin_se_calcule_sur_lexercice_meme_sans_coeur(client, db_sess
     assert corps["indexAfter"] is not None
     # Visage detendu (0,2 pour une normale a 0,5) : l'indice passe sous 30.
     assert corps["indexAfter"] < 30.0
+
+
+def test_une_nouvelle_seance_repart_micro_et_camera_actifs(client, db_session):
+    """Couper le micro vaut pour la seance en cours, jamais pour la suivante."""
+    astro = _astronaute(db_session)
+    premiere = _session_ouverte(db_session, astro)
+    client.post(f"/api/v1/sessions/{premiere.id}/consent", json={"camera": True, "microphone": False})
+    assert client.get("/api/v1/cabins/cabine-01/consent").json()["microphone"] is False
+
+    assert client.post("/api/v1/sessions", json={"crewId": str(astro.id), "cabinId": "cabine-01"}).status_code == 200
+    assert client.get("/api/v1/cabins/cabine-01/consent").json() == {"camera": True, "microphone": True}

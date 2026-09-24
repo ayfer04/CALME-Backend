@@ -77,6 +77,10 @@ def ouvrir_session(corps: OuvertureSeance, db: DbSession = Depends(get_db)):
         mode="measuring",
     )
     db.add(session)
+    # Chaque seance repart camera et micro actives : couper un capteur vaut
+    # pour la seance en cours, pas pour les suivantes (la personne d'apres
+    # n'a rien choisi). Dans la seance, le choix reste garde en base.
+    consentement.mettre_a_jour(db, True, True)
     db.commit()
     db.refresh(session)
     return _session_publique(db, session)
@@ -189,6 +193,8 @@ def clore_session(session_id: int, db: DbSession = Depends(get_db)):
         niveau_apres = evaluation_cloture["level"]
 
     decision.indice_apres = index_apres
+    # Fin de seance : camera et micro redeviennent actifs pour la suivante.
+    consentement.mettre_a_jour(db, True, True)
     session.fin = datetime.now(timezone.utc)
     session.mode = "standby"
     db.commit()
