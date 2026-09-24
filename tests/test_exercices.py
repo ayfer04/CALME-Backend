@@ -39,8 +39,10 @@ def test_en_rouge_uniquement_de_la_respiration_meme_visage_crispe():
     assert rouges and all(e["kind"] == "breathing" for e in rouges)
 
 
-def test_une_mesure_inexploitable_ne_propose_rien():
-    assert exercices_autorises("unreliable") == []
+def test_une_mesure_incomplete_propose_les_exercices_doux():
+    doux = exercices_autorises("unreliable")
+    assert doux and all(e["minLevel"] == "green" for e in doux)
+    assert exercices_autorises("unreliable", dominant="visage")[0]["id"] == "visage"
 
 
 def test_le_signal_dominant_passe_en_tete():

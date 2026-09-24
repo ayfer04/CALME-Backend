@@ -4,6 +4,12 @@ from app.services import synthese
 
 
 @pytest.fixture(autouse=True)
+def _reglages_neutres(monkeypatch):
+    """Les fausses voix n'ont pas besoin des vrais reglages Piper."""
+    monkeypatch.setattr(synthese, "_reglages_synthese", lambda voix: None)
+
+
+@pytest.fixture(autouse=True)
 def _cache_vide():
     """Le cache est un dictionnaire de module : on le vide avant et apres
     chaque test pour qu'aucun ne pollue le suivant.

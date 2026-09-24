@@ -12,6 +12,7 @@ ce qu'on veut eviter a la veille d'une soutenance.
 
 import hashlib
 import io
+import os
 import wave
 from pathlib import Path
 
@@ -20,8 +21,29 @@ from pathlib import Path
 # calcule depuis ce fichier, comme DEFAUT_DOSSIER_STATIQUE dans app/main.py,
 # pour ne pas dependre du repertoire courant au lancement du serveur.
 DOSSIER_MODELE = Path(__file__).resolve().parent.parent / "resources" / "tts"
-MODELE = DOSSIER_MODELE / "fr_FR-siwis-medium.onnx"
-CONFIG_MODELE = DOSSIER_MODELE / "fr_FR-siwis-medium.onnx.json"
+
+# La voix de la cabine, reglable sans toucher au code : "Pierre", voix
+# masculine du modele fr_FR-upmc-medium (qui porte deux locuteurs, jessica et
+# pierre), un peu ralentie pour rester posee. Le modele est telecharge au
+# build de l'image dans DOSSIER_VOIX (voir le Dockerfile) ; s'il manque (poste
+# de developpement), on retombe sur Siwis, embarquee dans le depot.
+VOIX = os.environ.get("VOIX_PIPER", "fr_FR-upmc-medium")
+LOCUTEUR = os.environ.get("LOCUTEUR_PIPER", "pierre")
+VITESSE = float(os.environ.get("VITESSE_VOIX", "1.08"))   # >1 = plus lent
+DOSSIER_VOIX = Path(os.environ.get("DOSSIER_VOIX", "/app/modeles/piper"))
+VOIX_DE_SECOURS = DOSSIER_MODELE / "fr_FR-siwis-medium.onnx"
+
+
+def _chemin_modele() -> Path:
+    for dossier in (DOSSIER_VOIX, DOSSIER_MODELE):
+        candidat = dossier / f"{VOIX}.onnx"
+        if candidat.is_file() and candidat.with_suffix(".onnx.json").is_file():
+            return candidat
+    return VOIX_DE_SECOURS
+
+
+MODELE = _chemin_modele()
+CONFIG_MODELE = MODELE.with_suffix(".onnx.json")
 
 # Les memes textes reviennent a chaque seance : la question posee pendant la
 # minute de mesure, et les huit consignes generiques (voir
@@ -31,6 +53,7 @@ CONFIG_MODELE = DOSSIER_MODELE / "fr_FR-siwis-medium.onnx.json"
 _cache: dict[str, bytes] = {}
 
 _voix = None
+_reglages = None
 
 
 class VoixIndisponible(Exception):
@@ -62,6 +85,18 @@ def _charger_voix():
     return _voix
 
 
+def _reglages_synthese(voix):
+    """Locuteur et debit. Le locuteur n'existe que pour les modeles qui en
+    portent plusieurs (speaker_id_map) : Siwis, en secours, n'en a qu'un."""
+    global _reglages
+    if _reglages is None:
+        from piper import SynthesisConfig
+
+        carte = getattr(getattr(voix, "config", None), "speaker_id_map", None) or {}
+        _reglages = SynthesisConfig(speaker_id=carte.get(LOCUTEUR), length_scale=VITESSE)
+    return _reglages
+
+
 def synthetiser(texte: str) -> bytes:
     """Renvoie un WAV (octets) prononcant `texte`, en francais.
 
@@ -70,7 +105,7 @@ def synthetiser(texte: str) -> bytes:
     voix embarque est la seule exception a cette regle - c'est une
     ressource, pas une donnee de mesure.
     """
-    cle = hashlib.sha256(texte.encode("utf-8")).hexdigest()
+    cle = hashlib.sha256(f"{MODELE.name}|{LOCUTEUR}|{VITESSE}|{texte}".encode("utf-8")).hexdigest()
     if cle in _cache:
         return _cache[cle]
 
@@ -78,7 +113,7 @@ def synthetiser(texte: str) -> bytes:
     tampon = io.BytesIO()
     try:
         with wave.open(tampon, "wb") as fichier_wav:
-            voix.synthesize_wav(texte, fichier_wav)
+            voix.synthesize_wav(texte, fichier_wav, syn_config=_reglages_synthese(voix))
     except Exception as erreur:
         raise VoixIndisponible(f"echec de synthese : {erreur}") from erreur
 

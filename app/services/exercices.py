@@ -122,12 +122,14 @@ def signal_dominant(zs: dict[str, float], inverses: set[str]) -> str:
 def exercices_autorises(niveau: str, dominant: str | None = None) -> list[dict]:
     """Les exercices permis par le palier, les plus pertinents d'abord.
 
-    En rouge, c'est toujours de la respiration. Une mesure aberrante ne
-    declenche aucun exercice : proposer une respiration sur un faux contact,
-    c'est apprendre aux gens a ignorer la machine.
+    En rouge, c'est toujours de la respiration. Une mesure incomplete (peu de
+    capteurs, confiance basse) ne tranche pas sur le niveau, mais ne laisse
+    pas la personne repartir les mains vides : elle recoit les exercices les
+    plus doux, ceux du palier vert, que l'on peut faire sans risque quelle que
+    soit la charge reelle. L'ecran dit que la mesure est partielle.
     """
     if niveau == "unreliable":
-        return []
+        niveau = "green"
     if niveau == "red":
         permis = [e for e in CATALOGUE if e["kind"] == "breathing"]
     else:

@@ -169,15 +169,16 @@ def test_assess_dune_autre_seance_du_meme_astronaute_nest_jamais_dans_son_propre
 # Recommendation.exercise non-nullable).
 # ---------------------------------------------------------------------------
 
-def test_assess_niveau_unreliable_pousse_un_notice_jamais_une_recommandation_a_null(
+def test_assess_mesure_incomplete_propose_quand_meme_un_exercice_doux(
     client, db_session, monkeypatch
 ):
+    """Aucun capteur n'a repondu : le niveau reste 'unreliable' (on ne tranche
+    pas sur la charge), mais la personne repart avec un exercice doux, et la
+    consigne dit que la mesure est partielle."""
     monkeypatch.setattr("app.services.consigne.interroger_modele", lambda *a, **k: None)
     astro = _astronaute(db_session)
     session = _session_ouverte(db_session, astro)
     db_session.commit()
-    # Aucune mesure : tous les signaux manquent, la confiance calculee est
-    # nulle, donc le niveau est 'unreliable' et exercices_autorises() est vide.
 
     with client.websocket_connect(f"/api/v1/sessions/{session.id}/stream") as ws:
         reponse = client.post(f"/api/v1/sessions/{session.id}/assess")
@@ -185,21 +186,16 @@ def test_assess_niveau_unreliable_pousse_un_notice_jamais_une_recommandation_a_n
         evaluation = reponse.json()
         assert evaluation["level"] == "unreliable"
 
-        evenement_assessment = ws.receive_json()
-        assert evenement_assessment["type"] == "assessment"
+        assert ws.receive_json()["type"] == "assessment"
+        recommandation = ws.receive_json()
+        assert recommandation["type"] == "recommendation"
+        exercice = recommandation["payload"]["exercise"]
+        assert exercice["minLevel"] == "green"
+        assert "incomplète" in recommandation["payload"]["message"].lower()
 
-        # Jamais d'evenement 'recommendation' avec exercise=None : un 'notice'
-        # a la place, avec le message de maintenance.
-        evenement_suivant = ws.receive_json()
-        assert evenement_suivant["type"] == "notice"
-        assert evenement_suivant["payload"]["level"] == "warning"
-        assert "exploitable" in evenement_suivant["payload"]["message"].lower()
-
-    # Le endpoint HTTP direct suit le meme principe : pas de Recommendation
-    # avec exercise=None, un null honnete a la place.
     reco = client.post(f"/api/v1/assessments/{evaluation['id']}/recommend")
     assert reco.status_code == 200
-    assert reco.json() is None
+    assert reco.json()["exercise"]["minLevel"] == "green"
 
 
 def test_lassessment_nomme_le_signal_dominant():

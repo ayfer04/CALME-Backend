@@ -36,34 +36,50 @@ DELAI_CONNEXION_S = 2.0
 # fois la connexion etablie.
 DELAI_MAX_S = 12.0
 
+# Phrases prononcees par la cabine : elles gardent leurs accents, que Piper
+# lit (sans eux, "guidee" se prononce comme il est ecrit).
 CONSIGNES_GENERIQUES: dict[str, str] = {
-    "cc365": "Cinq minutes de respiration guidee. Suivez le cercle : il se dilate a l'inspiration, il se contracte a l'expiration.",
-    "carre": "Quatre minutes. Inspirez sur quatre temps, retenez quatre, expirez quatre, attendez quatre.",
-    "478": "Trois minutes. Inspirez sur quatre temps, retenez sept, expirez sur huit.",
-    "ancrage5432": "Cinq minutes. Nommez cinq choses que vous voyez, quatre que vous entendez, trois que vous touchez.",
-    "playlist": "Dix minutes de son, dont le tempo descendra progressivement. Vous n'avez rien a faire.",
-    "circadien": "Quinze minutes de lumiere descendante, calee sur l'heure de bord.",
-    "sieste": "Vingt minutes. Fermez les yeux, la cabine vous reveillera.",
-    "journal": "Huit minutes. Racontez votre journee a voix haute. Personne ne l'ecoutera.",
+    "cc365": "Cinq minutes de respiration guidée. Suis le cercle : il se remplit quand tu inspires, il se vide quand tu expires.",
+    "carre": "Quatre minutes de respiration au carré, au rythme de la musique : inspire, retiens, expire, attends.",
+    "478": "Trois minutes. Inspire sur quatre temps, retiens sur sept, expire sur huit.",
+    "ancrage5432": "Cinq minutes. Nomme cinq choses que tu vois, quatre que tu entends, trois que tu touches.",
+    "playlist": "Dix minutes de musique, dont le tempo va ralentir peu à peu. Tu n'as rien à faire.",
+    "circadien": "Quinze minutes de lumière descendante, calée sur l'heure de bord.",
+    "sieste": "Vingt minutes. Ferme les yeux, la cabine te réveillera.",
+    "journal": "Huit minutes. Raconte ta journée à voix haute. Personne ne l'écoutera.",
     "soupir": "Deux minutes. Deux inspirations par le nez, puis une longue expiration par la bouche.",
-    "visage": "Trois minutes. Contractez puis relachez le front, les yeux et la machoire.",
-    "jacobson": "Huit minutes. Contractez chaque partie du corps cinq secondes, puis relachez.",
-    "scan": "Sept minutes. Laissez votre attention parcourir le corps, des pieds a la tete.",
-    "recul": "Cinq minutes. Trois questions pour remettre la journee a sa juste place.",
-    "visualisation": "Six minutes. Laissez-vous guider jusqu'au hublot, face a la Terre.",
+    "visage": "Trois minutes pour détendre ton visage : le front, les yeux, la mâchoire.",
+    "jacobson": "Huit minutes. Contracte chaque partie du corps cinq secondes, puis relâche.",
+    "scan": "Sept minutes. Laisse ton attention parcourir le corps, des pieds à la tête.",
+    "recul": "Cinq minutes. Trois questions pour remettre la journée à sa juste place.",
+    "visualisation": "Six minutes. Laisse-toi guider jusqu'au hublot, face à la Terre.",
 }
+
+# Mesure incomplete : on le dit avant de proposer, sans alarmer ni conclure.
+PREFIXE_MESURE_PARTIELLE = (
+    "Ma mesure est incomplète aujourd'hui, alors je te propose quelque chose de doux. "
+)
 
 MESSAGE_MAINTENANCE = (
     "Les mesures ne sont pas exploitables pour l'instant. "
-    "Aucun exercice n'est propose. Signalez-le en maintenance."
+    "Aucun exercice n'est proposé. Signale-le en maintenance."
 )
 
 SYSTEME = (
     "Tu es l'assistant d'une cabine de recuperation a bord d'un vaisseau. "
     "Tu choisis UN exercice dans la liste fournie et tu rediges une consigne "
-    "de deux phrases maximum, calme, tutoiement exclu, sans emoji, sans "
+    "de deux phrases maximum, calme, en tutoyant, sans emoji, sans "
     "diagnostic medical. Tu ne proposes rien qui ne soit pas dans la liste."
 )
+
+
+def contexte_mesure(evaluation: dict) -> str:
+    if evaluation.get("level") == "unreliable":
+        # Pas d'indice a citer : il ne repose que sur une partie des capteurs.
+        return ("Mesure incomplete : peu de capteurs ont repondu, le niveau de "
+                "charge n'est pas fiable. Dis-le simplement en une courte phrase, "
+                "sans alarmer, puis propose l'exercice choisi.")
+    return f"Indice de charge : {evaluation['index']} sur 100, palier {evaluation['level']}."
 
 
 def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[dict],
@@ -95,8 +111,7 @@ def interroger_modele(evaluation: dict, autorises: list[dict], historique: list[
             messages=[
                 {"role": "system", "content": SYSTEME},
                 {"role": "user", "content":
-                    f"Indice de charge : {evaluation['index']} sur 100, palier "
-                    f"{evaluation['level']}.{oriente}\nExercices disponibles :\n{liste}"},
+                    f"{contexte_mesure(evaluation)}{oriente}\nExercices disponibles :\n{liste}"},
             ],
             format=schema,   # contrainte appliquee au decodage, pas verifiee apres coup
         )
@@ -125,4 +140,7 @@ def rediger(evaluation: dict, autorises: list[dict],
             if choisi and message:
                 return choisi, message, "model", candidat
 
-    return defaut, CONSIGNES_GENERIQUES[defaut["id"]], "rules", None
+    message = CONSIGNES_GENERIQUES[defaut["id"]]
+    if evaluation.get("level") == "unreliable":
+        message = PREFIXE_MESURE_PARTIELLE + message
+    return defaut, message, "rules", None

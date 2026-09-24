@@ -48,27 +48,22 @@ def test_recommander_sur_une_evaluation_inconnue_est_refuse(client):
     assert reponse.status_code == 404
 
 
-def test_recommander_sans_exercice_autorise_ne_fabrique_rien(client, db_session, monkeypatch):
-    """Niveau 'unreliable' : exercices_autorises() renvoie une liste vide, et
-    rediger() renvoie alors exercice=None. Le contrat TS attend un Exercise
-    non-nul (Frontend/src/api/types.ts, Recommendation.exercise) : plutot que
-    d'y placer un exercise=None qui violerait ce contrat, la route renvoie
-    null - il n'y a pas de recommandation a faire, et pretendre le contraire
-    serait plus malhonnete qu'un null.
-    """
+def test_recommander_sur_mesure_incomplete_propose_un_exercice_doux(client, db_session, monkeypatch):
+    """Niveau 'unreliable' : la charge n'est pas tranchee, mais un exercice
+    doux est quand meme propose, et la consigne annonce la mesure partielle."""
     monkeypatch.setattr("app.services.consigne.interroger_modele", lambda *a, **k: None)
     decision = _decision(db_session, niveau="unreliable",
                          assessment_id="66666666-6666-6666-6666-666666666666")
 
     reponse = client.post(f"/api/v1/assessments/{decision.assessment_id}/recommend")
     assert reponse.status_code == 200
-    assert reponse.json() is None
+    corps = reponse.json()
+    assert corps["exercise"]["minLevel"] == "green"
+    assert corps["message"].startswith("Ma mesure est incomplète")
 
-    # La decision garde neanmoins la trace : pas d'exercice declenche, mais
-    # le message de maintenance persiste (pour /sessions/{id}/assessment).
     db_session.refresh(decision)
-    assert decision.exercice_id is None
-    assert decision.exercice_declenche is False
+    assert decision.exercice_id == corps["exercise"]["id"]
+    assert decision.exercice_declenche is True
 
 
 def test_feedback_est_persiste_et_relie_a_la_bonne_decision(client, db_session, monkeypatch):

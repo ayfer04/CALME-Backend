@@ -50,6 +50,6 @@ cp calme-kiosque.desktop ~/.config/autostart/
 ```
 
 Au démarrage, le firmware écrit `#I2C` suivi des adresses qui répondent :
-`0x57` (MAX30102) et `0x40` (INA219) sont attendues. « aucun périphérique »
+`0x57` (MAX30102) est attendue. « aucun périphérique »
 signifie un problème de câblage du bus (SDA 20, SCL 21, alimentation,
 adaptateur de niveau), pas de logiciel.

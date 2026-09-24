@@ -7,6 +7,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Modele Whisper du dialogue, telecharge ici, au build, et jamais a la requete :
 # la cabine doit pouvoir converser hors ligne (voir app/services/dialogue.py).
+# Voix de la cabine (voir app/services/synthese.py) : modele fr_FR-upmc-medium,
+# locuteur "pierre", telecharge au build comme Whisper.
+ENV DOSSIER_VOIX=/app/modeles/piper VOIX_PIPER=fr_FR-upmc-medium LOCUTEUR_PIPER=pierre
+ADD https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx /app/modeles/piper/
+ADD https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx.json /app/modeles/piper/
+
 ENV MODELE_WHISPER=small DOSSIER_WHISPER=/app/modeles/whisper
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8', download_root='/app/modeles/whisper')"
 

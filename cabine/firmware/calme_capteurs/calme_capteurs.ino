@@ -5,7 +5,8 @@
 // (app/services/cardiaque.py attend un PPG a 100 Hz). Une ligne par
 // echantillon, lue par cabine/passerelle.py sur le Raspberry Pi :
 //
-//   D,<ir>,<gsr>,<courant_mA>      ex. D,118532,431,245.3
+//   D,<ir>,<gsr>,-1                ex. D,118532,431,-1
+//   (le dernier champ, courant, reste a -1 : l'INA219 n'est pas monte)
 //   #...                           message d'etat, simplement journalise
 //
 // Commandes descendantes, une par ligne, envoyees par la passerelle :
@@ -13,11 +14,10 @@
 //   R,e,c      relais : e = ecran, c = camera (1 = alimente, 0 = coupe)
 //
 // Carte : Arduino Mega ADK. Bibliotheques : SparkFun MAX3010x, Adafruit
-// INA219, Adafruit NeoPixel. Cablage : voir le tutoriel, partie Arduino.
+// NeoPixel. Cablage : voir le tutoriel, partie Arduino.
 
 #include <Wire.h>
 #include "MAX30105.h"          // SparkFun MAX3010x, compatible MAX30102
-#include <Adafruit_INA219.h>
 #include <Adafruit_NeoPixel.h>
 
 const uint8_t BROCHE_GSR = A0;
@@ -31,13 +31,9 @@ const unsigned long PERIODE_US = 10000UL;   // 100 Hz
 const uint8_t RELAIS_ACTIF = HIGH;
 
 MAX30105 capteurCardiaque;
-Adafruit_INA219 ina219;
 Adafruit_NeoPixel bandeau(NB_LED, BROCHE_LED, NEO_GRB + NEO_KHZ800);
 
 bool cardiaqueOk = false;
-bool inaOk = false;
-float courantMa = -1;          // -1 tant que l'INA219 n'a pas repondu
-uint8_t compteur = 0;
 unsigned long prochain = 0;
 char commande[33];
 uint8_t longueur = 0;
@@ -89,7 +85,7 @@ void scannerI2C() {
       trouves++;
     }
   }
-  Serial.println(trouves ? "" : " aucun peripherique (attendus : 0x40 INA219, 0x57 MAX30102)");
+  Serial.println(trouves ? "" : " aucun peripherique (attendu : 0x57 MAX30102)");
 }
 
 void setup() {
@@ -119,8 +115,6 @@ void setup() {
   } else {
     Serial.println("#ERR MAX30102 absent");
   }
-  inaOk = ina219.begin();
-  if (!inaOk) Serial.println("#ERR INA219 absent");
   Serial.println("#OK calme_capteurs pret");
 
   prochain = micros();
@@ -135,17 +129,10 @@ void loop() {
   uint32_t ir = cardiaqueOk ? capteurCardiaque.getIR() : 0;
   int gsr = analogRead(BROCHE_GSR);
 
-  // Le courant varie lentement : une lecture sur dix suffit (10 Hz) et
-  // laisse le bus I2C au capteur cardiaque.
-  if (inaOk && ++compteur >= 10) {
-    compteur = 0;
-    courantMa = ina219.getCurrent_mA();
-  }
-
   Serial.print("D,");
   Serial.print(ir);
   Serial.print(',');
   Serial.print(gsr);
   Serial.print(',');
-  Serial.println(courantMa, 1);
+  Serial.println("-1");
 }
